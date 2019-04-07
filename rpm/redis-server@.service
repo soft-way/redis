@@ -1,0 +1,16 @@
+[Unit]
+Description=Redis Server %i
+Documentation=
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+Group=root
+ExecStart=/usr/bin/redis-server /etc/redis/redis-%i.conf
+KillMode=process
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target
