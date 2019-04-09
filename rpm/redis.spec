@@ -23,7 +23,7 @@ cp %{_topdir}/BUILD/%{name}-%{version}/src/redis-check-rdb $RPM_BUILD_ROOT/usr/b
 cp %{_topdir}/BUILD/%{name}-%{version}/src/redis-check-aof $RPM_BUILD_ROOT/usr/bin
     
 mkdir -p $RPM_BUILD_ROOT/etc/redis
-cp %{_topdir}/BUILD/%{name}-%{version}/rpm/redis.conf $RPM_BUILD_ROOT/etc/redis
+cp %{_topdir}/BUILD/%{name}-%{version}/rpm/*.conf $RPM_BUILD_ROOT/etc/redis
 
 mkdir -p $RPM_BUILD_ROOT/usr/lib/systemd/system
 cp %{_topdir}/BUILD/%{name}-%{version}/rpm/redis-server@.service $RPM_BUILD_ROOT/usr/lib/systemd/system
@@ -31,12 +31,18 @@ cp %{_topdir}/BUILD/%{name}-%{version}/rpm/redis-server@.service $RPM_BUILD_ROOT
 %clean
 
 %preun
+for svc in `systemctl list-units -t service |grep "redis-server@" | awk ' { print $1 } '`; do
+	systemctl disable $svc
+	systemctl stop $svc
+done
+
+%postun
 
 %post
+mkdir -p /var/log/redis
 
 %pre
 
-%postun
 
 %files
 %dir %attr(755, root, root)

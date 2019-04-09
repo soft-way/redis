@@ -33,7 +33,7 @@
 #include "fmacros.h"
 #include <string.h>
 #include <stdlib.h>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <unistd.h>
 #endif
 #include <assert.h>

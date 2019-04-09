@@ -47,6 +47,13 @@
 #define REDIS_ERR_OOM 5 /* Out of memory */
 #define REDIS_ERR_OTHER 2 /* Everything else... */
 
+#if 1 //shenzheng 2015-8-10 redis cluster
+#define REDIS_ERR_CLUSTER_TOO_MANY_REDIRECT 6
+#endif //shenzheng 2015-8-10 redis cluster
+#if 1 //shenzheng 2017-5-22 redis cluster
+#define REDIS_ERR_TIMEOUT 7
+#endif //shenzheng 2017-5-22 redis cluster
+
 #define REDIS_REPLY_STRING 1
 #define REDIS_REPLY_ARRAY 2
 #define REDIS_REPLY_INTEGER 3
@@ -55,6 +62,16 @@
 #define REDIS_REPLY_ERROR 6
 
 #define REDIS_READER_MAX_BUF (1024*16)  /* Default max unused reader buffer. */
+
+#if 1 //shenzheng 2015-8-22 redis cluster
+#define REDIS_ERROR_MOVED 			"MOVED"
+#define REDIS_ERROR_ASK 			"ASK"
+#define REDIS_ERROR_TRYAGAIN 		"TRYAGAIN"
+#define REDIS_ERROR_CROSSSLOT 		"CROSSSLOT"
+#define REDIS_ERROR_CLUSTERDOWN 	"CLUSTERDOWN"
+
+#define REDIS_STATUS_OK 			"OK"
+#endif //shenzheng 2015-9-24 redis cluster
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,6 +120,15 @@ int redisReaderGetReply(redisReader *r, void **reply);
 #define redisReaderSetPrivdata(_r, _p) (int)(((redisReader*)(_r))->privdata = (_p))
 #define redisReaderGetObject(_r) (((redisReader*)(_r))->reply)
 #define redisReaderGetError(_r) (((redisReader*)(_r))->errstr)
+
+/* Backwards compatibility, can be removed on big version bump. */
+#define redisReplyReaderCreate redisReaderCreate
+#define redisReplyReaderFree redisReaderFree
+#define redisReplyReaderFeed redisReaderFeed
+#define redisReplyReaderGetReply redisReaderGetReply
+#define redisReplyReaderSetPrivdata(_r, _p) (int)(((redisReader*)(_r))->privdata = (_p))
+#define redisReplyReaderGetObject(_r) (((redisReader*)(_r))->reply)
+#define redisReplyReaderGetError(_r) (((redisReader*)(_r))->errstr)
 
 #ifdef __cplusplus
 }

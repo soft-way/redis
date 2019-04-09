@@ -150,17 +150,29 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\deps\hiredis\adlist.c" />
     <ClCompile Include="..\..\deps\hiredis\async.c" />
+    <ClCompile Include="..\..\deps\hiredis\crc16.c" />
+    <ClCompile Include="..\..\deps\hiredis\dict.c" />
+    <ClCompile Include="..\..\deps\hiredis\hiarray.c" />
+    <ClCompile Include="..\..\deps\hiredis\hircluster.c" />
     <ClCompile Include="..\..\deps\hiredis\hiredis.c" />
+    <ClCompile Include="..\..\deps\hiredis\hiutil.c" />
     <ClCompile Include="..\..\deps\hiredis\net.c" />
     <ClCompile Include="..\..\deps\hiredis\read.c" />
     <ClCompile Include="..\..\deps\hiredis\sds.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\deps\hiredis\adlist.h" />
     <ClInclude Include="..\..\deps\hiredis\async.h" />
+    <ClInclude Include="..\..\deps\hiredis\command.h" />
     <ClInclude Include="..\..\deps\hiredis\fmacros.h" />
+    <ClInclude Include="..\..\deps\hiredis\hiarray.h" />
+    <ClInclude Include="..\..\deps\hiredis\hircluster.h" />
     <ClInclude Include="..\..\deps\hiredis\hiredis.h" />
+    <ClInclude Include="..\..\deps\hiredis\hiutil.h" />
     <ClInclude Include="..\..\deps\hiredis\net.h" />
+    <ClInclude Include="..\..\deps\hiredis\read.h" />
     <ClInclude Include="..\..\deps\hiredis\sds.h" />
     <ClInclude Include="..\..\deps\hiredis\win32_hiredis.h" />
   </ItemGroup>
