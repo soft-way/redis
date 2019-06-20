@@ -1,4 +1,7 @@
+[![Build Status](https://api.travis-ci.org/soft-way/redis.svg?branch=master)](https://api.travis-ci.org/soft-way/redis.svg?branch=master)
+
 Refer to msvs/README.md for build Redis on Visual Studio
+
 
 This README is just a fast *quick start* document. You can find more detailed documentation at [redis.io](https://redis.io).
 
