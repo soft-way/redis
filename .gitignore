@@ -14,7 +14,6 @@ release
 misc/*
 appendonly.aof
 SHORT_TERM_TODO
-release.h
 src/transfer.sh
 src/configs
 redis.ds
