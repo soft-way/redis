@@ -1,0 +1,25 @@
+
+language: c
+sudo: required
+
+env:
+  global:
+
+  matrix:
+    - PLATFORM=centos OS_VERSION=7
+
+services:
+  - docker
+
+before_install:
+  - sudo apt-get update -qq
+
+script:
+  - make -j 8
+
+before_deploy:
+  - travis_wait 30 make test
+
+deploy:
+
+notifications:
