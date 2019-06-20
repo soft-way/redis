@@ -3,8 +3,8 @@ image: "centos:7.6.1810"
 
 before_script:
   - rm -rf /etc/yum.repos.d/*.repo
-  - rpm -ivh http://135.252.167.151/share/mirrors/CentOS/7.6/updates/x86_64/Packages/wget-1.14-18.el7_6.1.x86_64.rpm
-  - wget -O /etc/yum.repos.d/centos7.6.repo http://135.252.167.151/share/misc/centos7.6.repo
+  - rpm -ivh http://192.168.0.100/share/mirrors/CentOS/7.6/updates/x86_64/Packages/wget-1.14-18.el7_6.1.x86_64.rpm
+  - wget -O /etc/yum.repos.d/centos7.6.repo http://192.168.0.100/share/misc/centos7.6.repo
   - yum clean all
   - yum -y install gcc make tcl which
 
