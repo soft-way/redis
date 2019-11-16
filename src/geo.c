@@ -51,7 +51,7 @@ int zslValueLteMax(double value, zrangespec *spec);
 
 /* Create a new array of geoPoints. */
 geoArray *geoArrayCreate(void) {
-    geoArray *ga = zmalloc(sizeof(*ga));
+    geoArray *ga = (geoArray*)zmalloc(sizeof(*ga));
     /* It gets allocated on first geoArrayAppend() call. */
     ga->array = NULL;
     ga->buckets = 0;
@@ -64,7 +64,7 @@ geoArray *geoArrayCreate(void) {
 geoPoint *geoArrayAppend(geoArray *ga) {
     if (ga->used == ga->buckets) {
         ga->buckets = (ga->buckets == 0) ? 8 : ga->buckets*2;
-        ga->array = zrealloc(ga->array,sizeof(geoPoint)*ga->buckets);
+        ga->array = (geoPoint*)zrealloc(ga->array,sizeof(geoPoint)*ga->buckets);
     }
     geoPoint *gp = ga->array+ga->used;
     ga->used++;
@@ -83,7 +83,8 @@ void geoArrayFree(geoArray *ga) {
  * Helpers
  * ==================================================================== */
 int decodeGeohash(double bits, double *xy) {
-    GeoHashBits hash = { .bits = (uint64_t)bits, .step = GEO_STEP_MAX };
+    GeoHashBits hash;
+    hash.bits = (uint64_t)bits, hash.step = GEO_STEP_MAX;
     return geohashDecodeToLongLatWGS84(hash, xy);
 }
 
@@ -113,7 +114,7 @@ int extractLongLatOrReply(client *c, robj **argv, double *xy) {
 int longLatFromMember(robj *zobj, robj *member, double *xy) {
     double score = 0;
 
-    if (zsetScore(zobj, member->ptr, &score) == C_ERR) return C_ERR;
+    if (zsetScore(zobj, (sds)member->ptr, &score) == C_ERR) return C_ERR;
     if (!decodeGeohash(score, xy)) return C_ERR;
     return C_OK;
 }
@@ -125,7 +126,7 @@ int longLatFromMember(robj *zobj, robj *member, double *xy) {
  * If the unit is not valid, an error is reported to the client, and a value
  * less than zero is returned. */
 double extractUnitOrReply(client *c, robj *unit) {
-    char *u = unit->ptr;
+    char *u = (char*)unit->ptr;
 
     if (!strcmp(u, "m")) {
         return 1;
@@ -225,12 +226,13 @@ int geoAppendIfWithinRadius(geoArray *ga, double lon, double lat, double radius,
 int geoGetPointsInRange(robj *zobj, double min, double max, double lon, double lat, double radius, geoArray *ga) {
     /* minex 0 = include min in range; maxex 1 = exclude max in range */
     /* That's: min <= val < max */
-    zrangespec range = { .min = min, .max = max, .minex = 0, .maxex = 1 };
+    zrangespec range;
+    range.min = min, range.max = max, range.minex = 0, range.maxex = 1;
     size_t origincount = ga->used;
     sds member;
 
     if (zobj->encoding == OBJ_ENCODING_ZIPLIST) {
-        unsigned char *zl = zobj->ptr;
+        unsigned char *zl = (unsigned char*)zobj->ptr;
         unsigned char *eptr, *sptr;
         unsigned char *vstr = NULL;
         unsigned int vlen = 0;
@@ -259,7 +261,7 @@ int geoGetPointsInRange(robj *zobj, double min, double max, double lon, double l
             zzlNext(zl, &eptr, &sptr);
         }
     } else if (zobj->encoding == OBJ_ENCODING_SKIPLIST) {
-        zset *zs = zobj->ptr;
+        zset *zs = (zset*)zobj->ptr;
         zskiplist *zsl = zs->zsl;
         zskiplistNode *ln;
 
@@ -382,7 +384,7 @@ int membersOfAllNeighbors(robj *zobj, GeoHashRadius n, double lon, double lat, d
 
 /* Sort comparators for qsort() */
 static int sort_gp_asc(const void *a, const void *b) {
-    const struct geoPoint *gpa = a, *gpb = b;
+    const struct geoPoint *gpa = (const struct geoPoint*)a, *gpb = (const struct geoPoint*)b;
     /* We can't do adist - bdist because they are doubles and
      * the comparator returns an int. */
     if (gpa->dist > gpb->dist)
@@ -413,7 +415,7 @@ void geoaddCommand(client *c) {
 
     int elements = (c->argc - 2) / 3;
     int argc = 2+elements*2; /* ZADD key score ele ... */
-    robj **argv = zcalloc(argc*sizeof(robj*));
+    robj **argv = (robj**)zcalloc(argc*sizeof(robj*));
     argv[0] = createRawStringObject("zadd",4);
     argv[1] = c->argv[1]; /* key */
     incrRefCount(argv[1]);
@@ -504,7 +506,7 @@ void georadiusGeneric(client *c, int flags) {
     if (c->argc > base_args) {
         int remaining = c->argc - base_args;
         for (int i = 0; i < remaining; i++) {
-            char *arg = c->argv[base_args + i]->ptr;
+            char *arg = (char*)c->argv[base_args + i]->ptr;
             if (!strcasecmp(arg, "withdist")) {
                 withdist = 1;
             } else if (!strcasecmp(arg, "withhash")) {
@@ -639,7 +641,7 @@ void georadiusGeneric(client *c, int flags) {
 
         if (returned_items) {
             zobj = createZsetObject();
-            zs = zobj->ptr;
+            zs = (zset *)zobj->ptr;
         }
 
         for (i = 0; i < returned_items; i++) {
@@ -709,7 +711,7 @@ void geohashCommand(client *c) {
     addReplyMultiBulkLen(c,c->argc-2);
     for (j = 2; j < c->argc; j++) {
         double score;
-        if (!zobj || zsetScore(zobj, c->argv[j]->ptr, &score) == C_ERR) {
+        if (!zobj || zsetScore(zobj, (sds)c->argv[j]->ptr, &score) == C_ERR) {
             addReply(c,shared.nullbulk);
         } else {
             /* The internal format we use for geocoding is a bit different
@@ -762,7 +764,7 @@ void geoposCommand(client *c) {
     addReplyMultiBulkLen(c,c->argc-2);
     for (j = 2; j < c->argc; j++) {
         double score;
-        if (!zobj || zsetScore(zobj, c->argv[j]->ptr, &score) == C_ERR) {
+        if (!zobj || zsetScore(zobj, (sds)c->argv[j]->ptr, &score) == C_ERR) {
             addReply(c,shared.nullmultibulk);
         } else {
             /* Decode... */
@@ -802,8 +804,8 @@ void geodistCommand(client *c) {
 
     /* Get the scores. We need both otherwise NULL is returned. */
     double score1, score2, xyxy[4];
-    if (zsetScore(zobj, c->argv[2]->ptr, &score1) == C_ERR ||
-        zsetScore(zobj, c->argv[3]->ptr, &score2) == C_ERR)
+    if (zsetScore(zobj, (sds)c->argv[2]->ptr, &score1) == C_ERR ||
+        zsetScore(zobj, (sds)c->argv[3]->ptr, &score2) == C_ERR)
     {
         addReply(c,shared.nullbulk);
         return;

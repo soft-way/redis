@@ -10,7 +10,7 @@ hiarray_create(uint32_t n, size_t size)
 
     ASSERT(n != 0 && size != 0);
 
-    a = hi_alloc(sizeof(*a));
+    a = (hiarray * )hi_alloc(sizeof(*a));
     if (a == NULL) {
         return NULL;
     }
@@ -70,8 +70,8 @@ hiarray_idx(struct hiarray *a, void *elem)
 
     ASSERT(elem >= a->elem);
 
-    p = a->elem;
-    q = elem;
+    p = (uint8_t*)a->elem;
+    q = (uint8_t*)elem;
     off = (uint32_t)(q - p);
 
     ASSERT(off % (uint32_t)a->size == 0);
@@ -84,19 +84,19 @@ hiarray_idx(struct hiarray *a, void *elem)
 void *
 hiarray_push(struct hiarray *a)
 {
-    void *elem, *new;
+    void *elem, *__new;
     size_t size;
 
     if (a->nelem == a->nalloc) {
 
         /* the array is full; allocate new array */
         size = a->size * a->nalloc;
-        new = hi_realloc(a->elem, 2 * size);
-        if (new == NULL) {
+        __new = hi_realloc(a->elem, 2 * size);
+        if (__new == NULL) {
             return NULL;
         }
 
-        a->elem = new;
+        a->elem = __new;
         a->nalloc *= 2;
     }
 

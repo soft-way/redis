@@ -22,7 +22,7 @@
 
 #include <Windows.h>
 #include <assert.h>
-
+#include "Win32_ThreadControl.h"
 
 volatile LONG g_NumWorkerThreads = 0;
 

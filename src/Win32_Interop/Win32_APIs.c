@@ -23,6 +23,12 @@
 #include "Win32_APIs.h"
 #include <errno.h>
 
+#ifndef __RTL_GENRANDOM
+#define __RTL_GENRANDOM 1
+typedef BOOLEAN(_stdcall* RtlGenRandomFunc)(void* RandomBuffer, ULONG RandomBufferLength);
+RtlGenRandomFunc RtlGenRandom;
+#endif
+
 /* Replace MS C rtl rand which is 15bit with 32 bit */
 int replace_random() {
     unsigned int x = 0;

@@ -156,6 +156,7 @@ deps/lua/src/liblua.a
 Makefile.dep
 
 msvs/.vs
+msvs/RedisServer/x64
 msvs/RedisBenchmark/x64
 msvs/RedisCli/x64
 msvs/hiredis/x64

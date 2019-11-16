@@ -135,10 +135,10 @@ malloc_strtoumax(const char *restrict nptr, char **restrict endptr, int base) {
 			break;
 		case '-':
 			neg = true;
-			/* Fall through. */
+			JEMALLOC_FALLTHROUGH;
 		case '+':
 			p++;
-			/* Fall through. */
+			JEMALLOC_FALLTHROUGH;
 		default:
 			goto label_prefix;
 		}
@@ -289,7 +289,7 @@ d2s(intmax_t x, char sign, char *s, size_t *slen_p) {
 		if (!neg) {
 			break;
 		}
-		/* Fall through. */
+		JEMALLOC_FALLTHROUGH;
 	case ' ':
 	case '+':
 		s--;
@@ -362,7 +362,7 @@ malloc_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
 	}								\
 } while (0)
 #define GET_ARG_NUMERIC(val, len) do {					\
-	switch (len) {							\
+	switch ((unsigned char)len) {					\
 	case '?':							\
 		val = va_arg(ap, int);					\
 		break;							\
@@ -632,7 +632,6 @@ malloc_vcprintf(void (*write_cb)(void *, const char *), void *cbopaque,
 		 */
 		write_cb = (je_malloc_message != NULL) ? je_malloc_message :
 		    wrtmessage;
-		cbopaque = NULL;
 	}
 
 	malloc_vsnprintf(buf, sizeof(buf), format, ap);
@@ -663,6 +662,36 @@ malloc_printf(const char *format, ...) {
 	va_start(ap, format);
 	malloc_vcprintf(NULL, NULL, format, ap);
 	va_end(ap);
+}
+
+void
+buf_writer_flush(buf_writer_arg_t *arg) {
+	assert(arg->buf_end <= arg->buf_size);
+	arg->buf[arg->buf_end] = '\0';
+	if (arg->write_cb == NULL) {
+		arg->write_cb = je_malloc_message != NULL ?
+		    je_malloc_message : wrtmessage;
+	}
+	arg->write_cb(arg->cbopaque, arg->buf);
+	arg->buf_end = 0;
+}
+
+void
+buffered_write_cb(void *buf_writer_arg, const char *s) {
+	buf_writer_arg_t *arg = (buf_writer_arg_t *)buf_writer_arg;
+	size_t i, slen, n, s_remain, buf_remain;
+	assert(arg->buf_end <= arg->buf_size);
+	for (i = 0, slen = strlen(s); i < slen; i += n) {
+		if (arg->buf_end == arg->buf_size) {
+			buf_writer_flush(arg);
+		}
+		s_remain = slen - i;
+		buf_remain = arg->buf_size - arg->buf_end;
+		n = s_remain < buf_remain ? s_remain : buf_remain;
+		memcpy(arg->buf + arg->buf_end, s + i, n);
+		arg->buf_end += n;
+	}
+	assert(i == slen);
 }
 
 /*

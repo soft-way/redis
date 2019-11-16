@@ -24,19 +24,20 @@
 #include "read.h"
 #include "Win32_RedisLog.h"
 #include "Win32_Portability.h"
+#include "Win32_QFork_impl.h"
 
 void SetupRedisGlobals(LPVOID redisData, size_t redisDataSize, uint32_t dictHashSeed)
 {
 #ifndef NO_QFORKIMPL
     memcpy(&server, redisData, redisDataSize);
-    dictSetHashFunctionSeed(dictHashSeed);
+    dictSetHashFunctionSeed((uint8_t *)dictHashSeed);
 #endif
 }
 
 int do_rdbSave(char* filename, rdbSaveInfo *rsi)
 {
 #ifndef NO_QFORKIMPL
-    server.rdb_child_pid = GetCurrentProcessId();
+    server.rdb_child_pid = (HANDLE)GetCurrentProcessId();
     if( rdbSave(filename, rsi) != REDIS_OK ) {
         redisLog(REDIS_WARNING,"rdbSave failed in qfork: %s", strerror(errno));
         return REDIS_ERR;
@@ -50,7 +51,7 @@ int do_aofSave(char* filename, int aof_pipe_read_ack, int aof_pipe_read_data, in
 #ifndef NO_QFORKIMPL
     int rewriteAppendOnlyFile(char *filename);
 
-    server.aof_child_pid = GetCurrentProcessId();
+    server.aof_child_pid = (HANDLE)GetCurrentProcessId();
     server.aof_pipe_write_ack_to_parent = aof_pipe_write_ack;
     server.aof_pipe_read_ack_from_parent = aof_pipe_read_ack;
     server.aof_pipe_read_data_from_parent = aof_pipe_read_data;
@@ -65,7 +66,7 @@ int do_aofSave(char* filename, int aof_pipe_read_ack, int aof_pipe_read_data, in
     return REDIS_OK;
 }
 
-int rdbSaveRioWithEOFMark(rio *rdb, int *error);
+int rdbSaveRioWithEOFMark(rio* rdb, int* error, rdbSaveInfo* rsi);
 
 // This function is meant to be an exact replica of the fork() child path in rdbSaveToSlavesSockets
 int do_rdbSaveToSlavesSockets(int *fds, int numfds, uint64_t *clientids)
@@ -74,7 +75,7 @@ int do_rdbSaveToSlavesSockets(int *fds, int numfds, uint64_t *clientids)
     int retval;
     rio slave_sockets;
 
-    server.rdb_child_pid = GetCurrentProcessId();
+    server.rdb_child_pid = (HANDLE)GetCurrentProcessId();
 
     rioInitWithFdset(&slave_sockets,fds,numfds);
     // On Windows we need to use the fds after do_socketSave2 has finished
@@ -87,7 +88,7 @@ int do_rdbSaveToSlavesSockets(int *fds, int numfds, uint64_t *clientids)
 
     redisSetProcTitle("redis-rdb-to-slaves");
     
-    retval = rdbSaveRioWithEOFMark(&slave_sockets,NULL);
+    retval = rdbSaveRioWithEOFMark(&slave_sockets, NULL, NULL);
     if (retval == REDIS_OK && rioFlush(&slave_sockets) == 0)
         retval = REDIS_ERR;
     
@@ -116,7 +117,7 @@ int do_rdbSaveToSlavesSockets(int *fds, int numfds, uint64_t *clientids)
          * set to 0 if the replication process terminated with a success
          * or the error code if an error occurred. */
         void *msg = zmalloc(sizeof(uint64_t)*(1+2*numfds));
-        uint64_t *len = msg;
+        uint64_t *len = (uint64_t *)msg;
         uint64_t *ids = len+1;
         int j, msglen;
     

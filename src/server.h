@@ -652,21 +652,22 @@ typedef struct clientReplyBlock {
  * by integers from 0 (the default database) up to the max configured
  * database. The database number is the 'id' field in the structure. */
 typedef struct redisDb {
-    dict *dict;                 /* The keyspace for this DB */
-    dict *expires;              /* Timeout of keys with a timeout set */
-    dict *blocking_keys;        /* Keys with clients waiting for data (BLPOP)*/
-    dict *ready_keys;           /* Blocked keys that received a PUSH */
-    dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS */
+    struct dict *dict;                 /* The keyspace for this DB */
+    struct dict *expires;              /* Timeout of keys with a timeout set */
+    struct dict *blocking_keys;        /* Keys with clients waiting for data (BLPOP)*/
+    struct dict *ready_keys;           /* Blocked keys that received a PUSH */
+    struct dict *watched_keys;         /* WATCHED keys for MULTI/EXEC CAS */
     int id;                     /* Database ID */
     long long avg_ttl;          /* Average TTL, just for stats */
     list *defrag_later;         /* List of key names to attempt to defrag one by one, gradually. */
 } redisDb;
 
 /* Client MULTI/EXEC state */
+struct __redisCommand;
 typedef struct multiCmd {
     robj **argv;
     int argc;
-    struct redisCommand *cmd;
+    struct __redisCommand *cmd;
 } multiCmd;
 
 typedef struct multiState {
@@ -727,7 +728,9 @@ typedef struct readyList {
 
 /* With multiplexing we need to take per-client state.
  * Clients are taken in a linked list. */
-typedef struct client {
+struct __redisCommand;
+
+typedef struct _client {
     uint64_t id;            /* Client incremental unique ID. */
     int fd;                 /* Client socket. */
     redisDb *db;            /* Pointer to currently SELECTed DB. */
@@ -741,7 +744,7 @@ typedef struct client {
     size_t querybuf_peak;   /* Recent (100ms or more) peak of querybuf size. */
     int argc;               /* Num of arguments of current command. */
     robj **argv;            /* Arguments of current command. */
-    struct redisCommand *cmd, *lastcmd;  /* Last command executed. */
+    struct __redisCommand *cmd, *lastcmd;  /* Last command executed. */
     int reqtype;            /* Request protocol type: PROTO_REQ_* */
     int multibulklen;       /* Number of multi bulk arguments left to read. */
     long bulklen;           /* Length of bulk argument in multi bulk request. */
@@ -749,14 +752,18 @@ typedef struct client {
     unsigned long long reply_bytes; /* Tot bytes of objects in reply list. */
     size_t sentlen;         /* Amount of bytes already sent in the current
                                buffer or object being sent. */
-    time_t ctime;           /* Client creation time. */
+    time_t _ctime;           /* Client creation time. */
     time_t lastinteraction; /* Time of the last interaction, used for timeout */
     time_t obuf_soft_limit_reached_time;
     int flags;              /* Client flags: CLIENT_* macros. */
     int authenticated;      /* When requirepass is non-NULL. */
     int replstate;          /* Replication state if this is a slave. */
     int repl_put_online_on_ack; /* Install slave write handler on ACK. */
+#ifdef _WIN32
+    FILE *repldbfd;           /* Replication DB file descriptor. */
+#else
     int repldbfd;           /* Replication DB file descriptor. */
+#endif
     off_t repldboff;        /* Replication DB file offset. */
     off_t repldbsize;       /* Replication DB file size. */
     sds replpreamble;       /* Replication DB preamble. */
@@ -814,23 +821,25 @@ struct sharedObjectsStruct {
 };
 
 /* ZSETs use a specialized version of Skiplists */
-typedef struct zskiplistNode {
+typedef struct _zskiplistLevel {
+    struct _zskiplistNode* forward;
+    unsigned long span;
+} zskiplistLevel;
+
+typedef struct _zskiplistNode {
     sds ele;
     double score;
-    struct zskiplistNode *backward;
-    struct zskiplistLevel {
-        struct zskiplistNode *forward;
-        unsigned long span;
-    } level[];
+    struct _zskiplistNode *backward;
+    zskiplistLevel level[];
 } zskiplistNode;
 
-typedef struct zskiplist {
-    struct zskiplistNode *header, *tail;
+typedef struct _zskiplist {
+    struct _zskiplistNode *header, *tail;
     unsigned long length;
     int level;
 } zskiplist;
 
-typedef struct zset {
+typedef struct _zset {
     dict *dict;
     zskiplist *zsl;
 } zset;
@@ -852,7 +861,7 @@ extern clientBufferLimitsConfig clientBufferLimitsDefaults[CLIENT_TYPE_OBUF_COUN
 typedef struct redisOp {
     robj **argv;
     int argc, dbid, target;
-    struct redisCommand *cmd;
+    struct __redisCommand *cmd;
 } redisOp;
 
 /* Defines an array of Redis operations. There is an API to add to this
@@ -866,6 +875,12 @@ typedef struct redisOpArray {
     redisOp *ops;
     int numops;
 } redisOpArray;
+
+typedef struct __db {
+    size_t dbid;
+    size_t overhead_ht_main;
+    size_t overhead_ht_expires;
+} _db;
 
 /* This structure is returned by the getMemoryOverheadData() function in
  * order to return memory overhead information. */
@@ -893,11 +908,7 @@ struct redisMemOverhead {
     float rss_extra;
     size_t rss_extra_bytes;
     size_t num_dbs;
-    struct {
-        size_t dbid;
-        size_t overhead_ht_main;
-        size_t overhead_ht_expires;
-    } *db;
+    _db* db;
 };
 
 /* This structure can be optionally passed to RDB save/load functions in
@@ -908,7 +919,7 @@ struct redisMemOverhead {
  * replication in order to make sure that chained slaves (slaves of slaves)
  * select the correct DB and are able to accept the stream coming from the
  * top-level master. */
-typedef struct rdbSaveInfo {
+typedef struct _rdbSaveInfo {
     /* Used saving and loading. */
     int repl_stream_db;  /* DB to select in server.master client. */
 
@@ -943,6 +954,8 @@ struct clusterState;
 #define CHILD_INFO_MAGIC 0xC17DDA7A12345678LL
 #define CHILD_INFO_TYPE_RDB 0
 #define CHILD_INFO_TYPE_AOF 1
+
+struct __redisCommand;
 
 struct redisServer {
     /* General */
@@ -1010,7 +1023,7 @@ struct redisServer {
     time_t loading_start_time;
     off_t loading_process_events_interval_bytes;
     /* Fast pointers to often looked up command */
-    struct redisCommand *delCommand, *multiCommand, *lpushCommand,
+    struct __redisCommand *delCommand, *multiCommand, *lpushCommand,
                         *lpopCommand, *rpopCommand, *zpopminCommand,
                         *zpopmaxCommand, *sremCommand, *execCommand,
                         *expireCommand, *pexpireCommand, *xclaimCommand,
@@ -1082,7 +1095,11 @@ struct redisServer {
     off_t aof_rewrite_base_size;    /* AOF size on latest startup or rewrite. */
     off_t aof_current_size;         /* AOF current size. */
     int aof_rewrite_scheduled;      /* Rewrite once BGSAVE terminates. */
+#ifdef _WIN32
+    HANDLE aof_child_pid;            /* PID if rewriting process */
+#else
     pid_t aof_child_pid;            /* PID if rewriting process */
+#endif
     list *aof_rewrite_buf_blocks;   /* Hold changes during an AOF rewrite. */
     sds aof_buf;      /* AOF buffer, written before entering the event loop */
     int aof_fd;       /* File descriptor of currently selected AOF file */
@@ -1112,7 +1129,11 @@ struct redisServer {
     /* RDB persistence */
     long long dirty;                /* Changes to DB from the last save */
     long long dirty_before_bgsave;  /* Used to restore dirty on failed BGSAVE */
+#ifdef _WIN32
+    HANDLE rdb_child_pid;            /* PID of RDB saving child */
+#else
     pid_t rdb_child_pid;            /* PID of RDB saving child */
+#endif
     struct saveparam *saveparams;   /* Save points array for RDB */
     int saveparamslen;              /* Number of saving points */
     char *rdb_filename;             /* Name of RDB file */
@@ -1308,9 +1329,10 @@ typedef struct pubsubPattern {
     robj *pattern;
 } pubsubPattern;
 
-typedef void redisCommandProc(client *c);
-typedef int *redisGetKeysProc(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
-struct redisCommand {
+struct __redisCommand;
+typedef void redisCommandProc(client* c);
+typedef int* redisGetKeysProc(struct __redisCommand* cmd, robj** argv, int argc, int* numkeys);
+typedef struct __redisCommand {
     char *name;
     redisCommandProc *proc;
     int arity;
@@ -1324,7 +1346,7 @@ struct redisCommand {
     int lastkey;  /* The last argument that's a key */
     int keystep;  /* The step between first and last key */
     long long microseconds, calls;
-};
+} _redisCommand;
 
 struct redisFunctionSym {
     char *name;
@@ -1405,6 +1427,11 @@ extern dictType replScriptCacheDictType;
 extern dictType keyptrDictType;
 extern dictType modulesDictType;
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 /*-----------------------------------------------------------------------------
  * Functions prototypes
  *----------------------------------------------------------------------------*/
@@ -1413,7 +1440,7 @@ extern dictType modulesDictType;
 void moduleInitModulesSystem(void);
 int moduleLoad(const char *path, void **argv, int argc);
 void moduleLoadFromQueue(void);
-int *moduleGetCommandKeysViaAPI(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *moduleGetCommandKeysViaAPI(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
 moduleType *moduleTypeLookupModuleByID(uint64_t id);
 void moduleTypeNameByID(char *name, uint64_t moduleid);
 void moduleFreeContext(struct RedisModuleCtx *ctx);
@@ -1486,7 +1513,7 @@ void freeClientsInAsyncFreeQueue(void);
 void asyncCloseClientOnOutputBufferLimitReached(client *c);
 int getClientType(client *c);
 int getClientTypeByName(char *name);
-char *getClientTypeName(int class);
+char *getClientTypeName(int __class);
 void flushSlavesOutputBuffers(void);
 void disconnectSlaves(void);
 int listenToPort(int port, int *fds, int *count);
@@ -1638,8 +1665,13 @@ int rdbSaveRio(rio *rdb, int *error, int flags, rdbSaveInfo *rsi);
 
 /* AOF persistence */
 void flushAppendOnlyFile(int force);
-void feedAppendOnlyFile(struct redisCommand *cmd, int dictid, robj **argv, int argc);
+void feedAppendOnlyFile(_redisCommand *cmd, int dictid, robj **argv, int argc);
+
+#ifdef _WIN32
+void aofRemoveTempFile(HANDLE childpid);
+#else
 void aofRemoveTempFile(pid_t childpid);
+#endif
 int rewriteAppendOnlyFileBackground(void);
 int loadAppendOnlyFile(char *filename);
 void stopAppendOnly(void);
@@ -1726,17 +1758,17 @@ int freeMemoryIfNeeded(void);
 int freeMemoryIfNeededAndSafe(void);
 int processCommand(client *c);
 void setupSignalHandlers(void);
-struct redisCommand *lookupCommand(sds name);
-struct redisCommand *lookupCommandByCString(char *s);
-struct redisCommand *lookupCommandOrOriginal(sds name);
+_redisCommand *lookupCommand(sds name);
+_redisCommand *lookupCommandByCString(char *s);
+_redisCommand *lookupCommandOrOriginal(sds name);
 void call(client *c, int flags);
-void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc, int flags);
-void alsoPropagate(struct redisCommand *cmd, int dbid, robj **argv, int argc, int target);
+void propagate(_redisCommand *cmd, int dbid, robj **argv, int argc, int flags);
+void alsoPropagate(_redisCommand *cmd, int dbid, robj **argv, int argc, int target);
 void forceCommandPropagation(client *c, int flags);
 void preventCommandPropagation(client *c);
 void preventCommandAOF(client *c);
 void preventCommandReplication(client *c);
-int prepareForShutdown();
+int prepareForShutdown(int flags);
 #ifdef __GNUC__
 void serverLog(int level, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
@@ -1875,14 +1907,14 @@ size_t lazyfreeGetPendingObjectsCount(void);
 void freeObjAsync(robj *o);
 
 /* API to get key arguments from commands */
-int *getKeysFromCommand(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *getKeysFromCommand(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
 void getKeysFreeResult(int *result);
-int *zunionInterGetKeys(struct redisCommand *cmd,robj **argv, int argc, int *numkeys);
-int *evalGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
-int *sortGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
-int *migrateGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
-int *georadiusGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
-int *xreadGetKeys(struct redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *zunionInterGetKeys(_redisCommand *cmd,robj **argv, int argc, int *numkeys);
+int *evalGetKeys(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *sortGetKeys(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *migrateGetKeys(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *georadiusGetKeys(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
+int *xreadGetKeys(_redisCommand *cmd, robj **argv, int argc, int *numkeys);
 
 /* Cluster */
 void clusterInit(void);
@@ -2174,5 +2206,10 @@ void xorDigest(unsigned char *digest, void *ptr, size_t len);
     printf("DEBUG %s:%d > " fmt "\n", __FILE__, __LINE__, __VA_ARGS__)
 #define redisDebugMark() \
     printf("-- MARK %s:%d --\n", __FILE__, __LINE__)
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,5 +1,7 @@
 #include "test/jemalloc_test.h"
 
+#define INVALID_ARENA_IND ((1U << MALLOCX_ARENA_BITS) - 1)
+
 TEST_BEGIN(test_arena_slab_regind) {
 	szind_t binind;
 
@@ -7,9 +9,11 @@ TEST_BEGIN(test_arena_slab_regind) {
 		size_t regind;
 		extent_t slab;
 		const bin_info_t *bin_info = &bin_infos[binind];
-		extent_init(&slab, NULL, mallocx(bin_info->slab_size,
-		    MALLOCX_LG_ALIGN(LG_PAGE)), bin_info->slab_size, true,
-		    binind, 0, extent_state_active, false, true, true);
+		extent_init(&slab, INVALID_ARENA_IND,
+		    mallocx(bin_info->slab_size, MALLOCX_LG_ALIGN(LG_PAGE)),
+		    bin_info->slab_size, true,
+		    binind, 0, extent_state_active, false, true, true,
+		    EXTENT_NOT_HEAD);
 		assert_ptr_not_null(extent_addr_get(&slab),
 		    "Unexpected malloc() failure");
 		for (regind = 0; regind < bin_info->nregs; regind++) {

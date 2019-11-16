@@ -26,10 +26,10 @@
 extern "C" {
 #endif
 
-    void SetupRedisGlobals(LPVOID redisData, size_t redisDataSize, uint32_t dictHashKey);
-    int do_rdbSave(char* filename);
-    int do_aofSave(char* filename, int aof_pipe_read_ack, int aof_pipe_read_data, int aof_pipe_write_ack);
-    int do_socketSave(int *fds, int numfds, uint64_t *clientids, int pipe_write_fd);
+void SetupRedisGlobals(LPVOID redisData, size_t redisDataSize, uint32_t dictHashKey);
+int do_rdbSave(char* filename, rdbSaveInfo* rsi);
+int do_aofSave(char* filename, int aof_pipe_read_ack, int aof_pipe_read_data, int aof_pipe_write_ack);
+int do_socketSave(int *fds, int numfds, uint64_t *clientids, int pipe_write_fd);
 
 #ifdef __cplusplus
 }

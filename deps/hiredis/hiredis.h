@@ -87,6 +87,10 @@
  * SO_REUSEADDR is being used. */
 #define REDIS_CONNECT_RETRIES  10
 
+#ifdef _WIN32
+#define strerror_r(errno,buf,len) strerror_s(buf,len,errno)
+#endif
+
 /* strerror_r has two completely different prototypes and behaviors
  * depending on system issues, so we need to operate on the error buffer
  * differently depending on which strerror_r we're using. */
@@ -110,6 +114,7 @@
         }                                                                      \
     } while (0)
 #endif
+
 
 #ifdef __cplusplus
 extern "C" {

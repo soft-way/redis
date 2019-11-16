@@ -25,8 +25,17 @@
 #include "win32_types.h"
 #include <Windows.h>
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 void StackTraceInit(void);
 
-extern "C" typedef char *sds;
-extern "C" sds genRedisInfoString(char *section);
-extern "C" void bugReportStart(void);
+typedef char *sds;
+sds genRedisInfoString(char *section);
+void bugReportStart(void);
+
+#ifdef __cplusplus
+}
+#endif

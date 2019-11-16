@@ -351,7 +351,7 @@ void luaReplyToRedisReply(client *c, lua_State *lua) {
 #define LUA_CMD_OBJCACHE_MAX_LEN 64
 int luaRedisGenericCommand(lua_State *lua, int raise_error) {
     int j, argc = lua_gettop(lua);
-    struct redisCommand *cmd;
+    _redisCommand *cmd;
     client *c = server.lua_client;
     sds reply;
 
@@ -393,7 +393,7 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
 
     /* Build the arguments vector */
     if (argv_size < argc) {
-        argv = zrealloc(argv,sizeof(robj*)*argc);
+        argv = (robj**)zrealloc(argv,sizeof(robj*)*argc);
         argv_size = argc;
     }
 
@@ -418,7 +418,7 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
         if (j < LUA_CMD_OBJCACHE_SIZE && cached_objects[j] &&
             cached_objects_len[j] >= obj_len)
         {
-            sds s = cached_objects[j]->ptr;
+            sds s = (sds)cached_objects[j]->ptr;
             argv[j] = cached_objects[j];
             cached_objects[j] = NULL;
             memcpy(s,obj_s,obj_len+1);
@@ -457,14 +457,14 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
                 break;
             } else {
                 cmdlog = sdscatlen(cmdlog," ",1);
-                cmdlog = sdscatsds(cmdlog,c->argv[j]->ptr);
+                cmdlog = sdscatsds(cmdlog,(const sds)c->argv[j]->ptr);
             }
         }
         ldbLog(cmdlog);
     }
 
     /* Command lookup */
-    cmd = lookupCommand(argv[0]->ptr);
+    cmd = lookupCommand((sds)argv[0]->ptr);
     if (!cmd || ((cmd->arity > 0 && cmd->arity != argc) ||
                    (argc < -cmd->arity)))
     {
@@ -496,11 +496,11 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
                    !server.loading &&
                    !(server.lua_caller->flags & CLIENT_MASTER))
         {
-            luaPushError(lua, shared.roslaveerr->ptr);
+            luaPushError(lua, (char*)shared.roslaveerr->ptr);
             goto cleanup;
         } else if (deny_write_type != DISK_ERROR_TYPE_NONE) {
             if (deny_write_type == DISK_ERROR_TYPE_RDB) {
-                luaPushError(lua, shared.bgsaveerr->ptr);
+                luaPushError(lua, (char*)shared.bgsaveerr->ptr);
             } else {
                 sds aof_write_err = sdscatfmt(sdsempty(),
                     "-MISCONF Errors writing to the AOF file: %s\r\n",
@@ -523,7 +523,7 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
         (cmd->flags & CMD_DENYOOM))
     {
         if (getMaxmemoryState(NULL,NULL,NULL,NULL) != C_OK) {
-            luaPushError(lua, shared.oomerr->ptr);
+            luaPushError(lua, (char*)shared.oomerr->ptr);
             goto cleanup;
         }
     }
@@ -588,7 +588,7 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
         reply = sdsnewlen(c->buf,c->bufpos);
         c->bufpos = 0;
         while(listLength(c->reply)) {
-            clientReplyBlock *o = listNodeValue(listFirst(c->reply));
+            clientReplyBlock *o = (clientReplyBlock*)listNodeValue(listFirst(c->reply));
 
             reply = sdscatlen(reply,o->buf,o->used);
             listDelNode(c->reply,listFirst(c->reply));
@@ -624,9 +624,9 @@ cleanup:
             o->refcount == 1 &&
             (o->encoding == OBJ_ENCODING_RAW ||
              o->encoding == OBJ_ENCODING_EMBSTR) &&
-            sdslen(o->ptr) <= LUA_CMD_OBJCACHE_MAX_LEN)
+            sdslen((const sds)o->ptr) <= LUA_CMD_OBJCACHE_MAX_LEN)
         {
-            sds s = o->ptr;
+            sds s = (sds)o->ptr;
             if (cached_objects[j]) decrRefCount(cached_objects[j]);
             cached_objects[j] = o;
             cached_objects_len[j] = sdsalloc(s);
@@ -1106,7 +1106,7 @@ void luaSetGlobalArray(lua_State *lua, char *var, robj **elev, int elec) {
 
     lua_newtable(lua);
     for (j = 0; j < elec; j++) {
-        lua_pushlstring(lua,(char*)elev[j]->ptr,sdslen(elev[j]->ptr));
+        lua_pushlstring(lua,(char*)elev[j]->ptr,sdslen((const sds)elev[j]->ptr));
         lua_rawseti(lua,-2,j+1);
     }
     lua_setglobal(lua,var);
@@ -1182,19 +1182,19 @@ sds luaCreateFunction(client *c, lua_State *lua, robj *body) {
 
     funcname[0] = 'f';
     funcname[1] = '_';
-    sha1hex(funcname+2,body->ptr,sdslen(body->ptr));
+    sha1hex(funcname+2, (char *)body->ptr,sdslen((const sds)body->ptr));
 
     sds sha = sdsnewlen(funcname+2,40);
     if ((de = dictFind(server.lua_scripts,sha)) != NULL) {
         sdsfree(sha);
-        return dictGetKey(de);
+        return (sds)dictGetKey(de);
     }
 
     sds funcdef = sdsempty();
     funcdef = sdscat(funcdef,"function ");
     funcdef = sdscatlen(funcdef,funcname,42);
     funcdef = sdscatlen(funcdef,"() ",3);
-    funcdef = sdscatlen(funcdef,body->ptr,sdslen(body->ptr));
+    funcdef = sdscatlen(funcdef,body->ptr,sdslen((const sds)body->ptr));
     funcdef = sdscatlen(funcdef,"\nend",4);
 
     if (luaL_loadbuffer(lua,funcdef,sdslen(funcdef),"@user_script")) {
@@ -1298,11 +1298,11 @@ void evalGenericCommand(client *c, int evalsha) {
     funcname[1] = '_';
     if (!evalsha) {
         /* Hash the code if this is an EVAL call */
-        sha1hex(funcname+2,c->argv[1]->ptr,sdslen(c->argv[1]->ptr));
+        sha1hex(funcname+2, (char *)c->argv[1]->ptr,sdslen((const sds)c->argv[1]->ptr));
     } else {
         /* We already have the SHA if it is a EVALSHA */
         int j;
-        char *sha = c->argv[1]->ptr;
+        char *sha = (char*)c->argv[1]->ptr;
 
         /* Convert to lowercase. We don't use tolower since the function
          * managed to always show up in the profiler output consuming
@@ -1434,13 +1434,13 @@ void evalGenericCommand(client *c, int evalsha) {
      * flush our cache of scripts that can be replicated as EVALSHA, while
      * for AOF we need to do so every time we rewrite the AOF file. */
     if (evalsha && !server.lua_replicate_commands) {
-        if (!replicationScriptCacheExists(c->argv[1]->ptr)) {
+        if (!replicationScriptCacheExists((sds)c->argv[1]->ptr)) {
             /* This script is not in our script cache, replicate it as
              * EVAL, then add it into the script cache, as from now on
              * slaves and AOF know about it. */
-            robj *script = dictFetchValue(server.lua_scripts,c->argv[1]->ptr);
+            robj *script = (robj*)dictFetchValue(server.lua_scripts,c->argv[1]->ptr);
 
-            replicationScriptCacheAdd(c->argv[1]->ptr);
+            replicationScriptCacheAdd((sds)c->argv[1]->ptr);
             serverAssertWithInfo(c,NULL,script != NULL);
 
             /* If the script did not produce any changes in the dataset we want
@@ -1470,7 +1470,7 @@ void evalCommand(client *c) {
 }
 
 void evalShaCommand(client *c) {
-    if (sdslen(c->argv[1]->ptr) != 40) {
+    if (sdslen((const sds)c->argv[1]->ptr) != 40) {
         /* We know that a match is not possible if the provided SHA is
          * not the right length. So we return an error ASAP, this way
          * evalGenericCommand() can be implemented without string length
@@ -1487,7 +1487,7 @@ void evalShaCommand(client *c) {
 }
 
 void scriptCommand(client *c) {
-    if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
+    if (c->argc == 2 && !strcasecmp((const char *)c->argv[1]->ptr,"help")) {
         const char *help[] = {
 "DEBUG (yes|sync|no) -- Set the debug mode for subsequent scripts executed.",
 "EXISTS <sha1> [<sha1> ...] -- Return information about the existence of the scripts in the script cache.",
@@ -1497,12 +1497,12 @@ void scriptCommand(client *c) {
 NULL
         };
         addReplyHelp(c, help);
-    } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"flush")) {
+    } else if (c->argc == 2 && !strcasecmp((const char*)c->argv[1]->ptr,"flush")) {
         scriptingReset();
         addReply(c,shared.ok);
         replicationScriptCacheFlush();
         server.dirty++; /* Propagating this command is a good idea. */
-    } else if (c->argc >= 2 && !strcasecmp(c->argv[1]->ptr,"exists")) {
+    } else if (c->argc >= 2 && !strcasecmp((const char*)c->argv[1]->ptr,"exists")) {
         int j;
 
         addReplyMultiBulkLen(c, c->argc-2);
@@ -1512,12 +1512,12 @@ NULL
             else
                 addReply(c,shared.czero);
         }
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr,"load")) {
+    } else if (c->argc == 3 && !strcasecmp((const char*)c->argv[1]->ptr,"load")) {
         sds sha = luaCreateFunction(c,server.lua,c->argv[2]);
         if (sha == NULL) return; /* The error was sent by luaCreateFunction(). */
         addReplyBulkCBuffer(c,sha,40);
         forceCommandPropagation(c,PROPAGATE_REPL|PROPAGATE_AOF);
-    } else if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"kill")) {
+    } else if (c->argc == 2 && !strcasecmp((const char*)c->argv[1]->ptr,"kill")) {
         if (server.lua_caller == NULL) {
             addReplySds(c,sdsnew("-NOTBUSY No scripts in execution right now.\r\n"));
         } else if (server.lua_caller->flags & CLIENT_MASTER) {
@@ -1528,18 +1528,18 @@ NULL
             server.lua_kill = 1;
             addReply(c,shared.ok);
         }
-    } else if (c->argc == 3 && !strcasecmp(c->argv[1]->ptr,"debug")) {
+    } else if (c->argc == 3 && !strcasecmp((const char*)c->argv[1]->ptr,"debug")) {
         if (clientHasPendingReplies(c)) {
             addReplyError(c,"SCRIPT DEBUG must be called outside a pipeline");
             return;
         }
-        if (!strcasecmp(c->argv[2]->ptr,"no")) {
+        if (!strcasecmp((const char*)c->argv[2]->ptr,"no")) {
             ldbDisable(c);
             addReply(c,shared.ok);
-        } else if (!strcasecmp(c->argv[2]->ptr,"yes")) {
+        } else if (!strcasecmp((const char*)c->argv[2]->ptr,"yes")) {
             ldbEnable(c);
             addReply(c,shared.ok);
-        } else if (!strcasecmp(c->argv[2]->ptr,"sync")) {
+        } else if (!strcasecmp((const char*)c->argv[2]->ptr,"sync")) {
             ldbEnable(c);
             addReply(c,shared.ok);
             c->flags |= CLIENT_LUA_DEBUG_SYNC;
@@ -1630,8 +1630,8 @@ void ldbSendLogs(void) {
     while(listLength(ldb.logs)) {
         listNode *ln = listFirst(ldb.logs);
         proto = sdscatlen(proto,"+",1);
-        sdsmapchars(ln->value,"\r\n","  ",2);
-        proto = sdscatsds(proto,ln->value);
+        sdsmapchars((sds)ln->value,"\r\n","  ",2);
+        proto = sdscatsds(proto, (const sds)ln->value);
         proto = sdscatlen(proto,"\r\n",2);
         listDelNode(ldb.logs,ln);
     }
@@ -1768,7 +1768,7 @@ void ldbKillForkedSessions(void) {
         pid_t pid = (unsigned long) ln->value;
         serverLog(LL_WARNING,"Killing debugging session %ld",(long)pid);
 #ifdef _WIN32
-        TerminateProcess(pid, 1);
+        TerminateProcess((HANDLE)pid, 1);
 #else 
         kill(pid,SIGKILL);
 #endif
@@ -1858,7 +1858,7 @@ sds *ldbReplParseCommand(int *argcp) {
     if (*argcp <= 0 || *argcp > 1024) goto protoerr;
 
     /* Parse each argument. */
-    argv = zmalloc(sizeof(sds)*(*argcp));
+    argv = (sds *)zmalloc(sizeof(sds)*(*argcp));
     argc = 0;
     while(argc < *argcp) {
         if (*p != '$') goto protoerr;
@@ -1990,12 +1990,12 @@ sds ldbCatStackValueRec(sds s, lua_State *lua, int idx, int level) {
     case LUA_TLIGHTUSERDATA:
         {
         const void *p = lua_topointer(lua,idx);
-        char *typename = "unknown";
-        if (t == LUA_TFUNCTION) typename = "function";
-        else if (t == LUA_TUSERDATA) typename = "userdata";
-        else if (t == LUA_TTHREAD) typename = "thread";
-        else if (t == LUA_TLIGHTUSERDATA) typename = "light-userdata";
-        s = sdscatprintf(s,"\"%s@%p\"",typename,p);
+        char *_typename = "unknown";
+        if (t == LUA_TFUNCTION) _typename = "function";
+        else if (t == LUA_TUSERDATA) _typename = "userdata";
+        else if (t == LUA_TTHREAD) _typename = "thread";
+        else if (t == LUA_TLIGHTUSERDATA) _typename = "light-userdata";
+        s = sdscatprintf(s,"\"%s@%p\"", _typename,p);
         }
         break;
     default:

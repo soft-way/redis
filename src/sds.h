@@ -34,7 +34,6 @@
 #define __SDS_H
 
 #define SDS_MAX_PREALLOC (1024*1024)
-const char *SDS_NOINIT;
 
 #ifdef _WIN32
 #include "Win32_Interop/Win32_Portability.h"
@@ -120,7 +119,7 @@ struct __attribute__((__packed__)) sdshdr64 {
 #define SDS_TYPE_64 4
 #define SDS_TYPE_MASK 7
 #define SDS_TYPE_BITS 3
-#define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
+#define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T)));
 #define SDS_HDR(T,s) ((struct sdshdr##T *)((s)-(sizeof(struct sdshdr##T))))
 #define SDS_TYPE_5_LEN(f) ((f)>>SDS_TYPE_BITS)
 
@@ -161,7 +160,7 @@ static inline size_t sdsavail(const sds s) {
         }
         case SDS_TYPE_64: {
             SDS_HDR_VAR(64,s);
-            return sh->alloc - sh->len;
+            return (sh->alloc - sh->len);
         }
     }
     return 0;

@@ -28,6 +28,7 @@
  */
 
 #ifdef _WIN32
+#include "Win32_Interop/win32_types.h"
 #include "Win32_Interop/Win32_RedisLog.h"
 #include "Win32_Interop/Win32_Portability.h"
 #include "Win32_Interop/Win32_Error.h"
@@ -44,6 +45,8 @@
 #include <math.h>
 #include <ctype.h>
 
+extern const char* SDS_NOINIT;
+
 static void setProtocolError(const char *errstr, client *c);
 
 /* Return the size consumed from the allocator, for the specified SDS string,
@@ -59,7 +62,7 @@ size_t sdsZmallocSize(sds s) {
 size_t getStringObjectSdsUsedMemory(robj *o) {
     serverAssertWithInfo(NULL,o,o->type == OBJ_STRING);
     switch(o->encoding) {
-    case OBJ_ENCODING_RAW: return sdsZmallocSize(o->ptr);
+    case OBJ_ENCODING_RAW: return sdsZmallocSize((sds)o->ptr);
     case OBJ_ENCODING_EMBSTR: return zmalloc_size(o)-sizeof(robj);
     default: return 0; /* Just integer encoding for now. */
     }
@@ -67,8 +70,8 @@ size_t getStringObjectSdsUsedMemory(robj *o) {
 
 /* Client.reply list dup and free methods. */
 void *dupClientReplyValue(void *o) {
-    clientReplyBlock *old = o;
-    clientReplyBlock *buf = zmalloc(sizeof(clientReplyBlock) + old->size);
+    clientReplyBlock *old = (clientReplyBlock*)o;
+    clientReplyBlock *buf = (clientReplyBlock*)zmalloc(sizeof(clientReplyBlock) + old->size);
     memcpy(buf, o, sizeof(clientReplyBlock) + old->size);
     return buf;
 }
@@ -78,7 +81,7 @@ void freeClientReplyValue(void *o) {
 }
 
 int listMatchObjects(void *a, void *b) {
-    return equalStringObjects(a,b);
+    return equalStringObjects((robj*)a, (robj*)b);
 }
 
 /* This function links the client to the global linked list of clients.
@@ -94,7 +97,7 @@ void linkClient(client *c) {
 }
 
 client *createClient(int fd) {
-    client *c = zmalloc(sizeof(client));
+    client *c = (client*)zmalloc(sizeof(client));
 
     /* passing -1 as fd it is possible to create a non connected client.
      * This is useful since all the commands needs to be executed
@@ -133,7 +136,7 @@ client *createClient(int fd) {
     c->bulklen = -1;
     c->sentlen = 0;
     c->flags = 0;
-    c->ctime = c->lastinteraction = server.unixtime;
+    c->_ctime = c->lastinteraction = server.unixtime;
     c->authenticated = 0;
     c->replstate = REPL_STATE_NONE;
     c->repl_put_online_on_ack = 0;
@@ -267,7 +270,7 @@ void _addReplyStringToList(client *c, const char *s, size_t len) {
     if (c->flags & CLIENT_CLOSE_AFTER_REPLY) return;
 
     listNode *ln = listLast(c->reply);
-    clientReplyBlock *tail = ln? listNodeValue(ln): NULL;
+    clientReplyBlock *tail = (clientReplyBlock*)(ln? listNodeValue(ln): NULL);
 
     /* Note that 'tail' may be NULL even if we have a tail node, becuase when
      * addDeferredMultiBulkLength() is used, it sets a dummy node to NULL just
@@ -288,7 +291,7 @@ void _addReplyStringToList(client *c, const char *s, size_t len) {
         /* Create a new node, make sure it is allocated to at
          * least PROTO_REPLY_CHUNK_BYTES */
         size_t size = len < PROTO_REPLY_CHUNK_BYTES? PROTO_REPLY_CHUNK_BYTES: len;
-        tail = zmalloc(size + sizeof(clientReplyBlock));
+        tail = (clientReplyBlock*)zmalloc(size + sizeof(clientReplyBlock));
         /* take over the allocation's internal fragmentation */
         tail->size = zmalloc_usable(tail) - sizeof(clientReplyBlock);
         tail->used = len;
@@ -309,8 +312,8 @@ void addReply(client *c, robj *obj) {
     if (prepareClientToWrite(c) != C_OK) return;
 
     if (sdsEncodedObject(obj)) {
-        if (_addReplyToBuffer(c,obj->ptr,sdslen(obj->ptr)) != C_OK)
-            _addReplyStringToList(c,obj->ptr,sdslen(obj->ptr));
+        if (_addReplyToBuffer(c, (const char *)obj->ptr,sdslen((const sds)obj->ptr)) != C_OK)
+            _addReplyStringToList(c, (const char*)obj->ptr,sdslen((const sds)obj->ptr));
     } else if (obj->encoding == OBJ_ENCODING_INT) {
         /* For integer encoded strings we just convert it into a string
          * using our optimized function, and attach the resulting string
@@ -458,7 +461,7 @@ void setDeferredMultiBulkLength(client *c, void *node, long length) {
      * - The next node is non-NULL,
      * - It has enough room already allocated
      * - And not too large (avoid large memmove) */
-    if (ln->next != NULL && (next = listNodeValue(ln->next)) &&
+    if (ln->next != NULL && (next = (clientReplyBlock*)listNodeValue(ln->next)) &&
         next->size - next->used >= lenstr_len &&
         next->used < PROTO_REPLY_CHUNK_BYTES * 4) {
         memmove(next->buf + lenstr_len, next->buf, next->used);
@@ -467,7 +470,7 @@ void setDeferredMultiBulkLength(client *c, void *node, long length) {
         listDelNode(c->reply,ln);
     } else {
         /* Create a new node */
-        clientReplyBlock *buf = zmalloc(lenstr_len + sizeof(clientReplyBlock));
+        clientReplyBlock *buf = (clientReplyBlock*)zmalloc(lenstr_len + sizeof(clientReplyBlock));
         /* Take over the allocation's internal fragmentation */
         buf->size = zmalloc_usable(buf) - sizeof(clientReplyBlock);
         buf->used = lenstr_len;
@@ -547,7 +550,7 @@ void addReplyBulkLen(client *c, robj *obj) {
     size_t len;
 
     if (sdsEncodedObject(obj)) {
-        len = sdslen(obj->ptr);
+        len = sdslen((const sds)obj->ptr);
     } else {
         long n = (long)obj->ptr;
 
@@ -578,7 +581,7 @@ void addReplyBulk(client *c, robj *obj) {
 /* Add a C buffer as bulk reply */
 void addReplyBulkCBuffer(client *c, const void *p, size_t len) {
     addReplyLongLongWithPrefix(c,len,'$');
-    addReplyString(c,p,len);
+    addReplyString(c, (const char *)p,len);
     addReply(c,shared.crlf);
 }
 
@@ -895,7 +898,7 @@ void freeClient(client *c) {
      * we lost the connection with a slave. */
     if (c->flags & CLIENT_SLAVE) {
         if (c->replstate == SLAVE_STATE_SEND_BULK) {
-            if (c->repldbfd != -1) close(c->repldbfd);
+            if (c->repldbfd != INVALID_HANDLE_VALUE) fclose(c->repldbfd);
             if (c->replpreamble) sdsfree(c->replpreamble);
         }
         list *l = (c->flags & CLIENT_MONITOR) ? server.monitors : server.slaves;
@@ -944,7 +947,7 @@ void freeClientAsync(client *c) {
 void freeClientsInAsyncFreeQueue(void) {
     while (listLength(server.clients_to_close)) {
         listNode *ln = listFirst(server.clients_to_close);
-        client *c = listNodeValue(ln);
+        client *c = (client*)listNodeValue(ln);
 
         c->flags &= ~CLIENT_CLOSE_ASAP;
         freeClient(c);
@@ -957,7 +960,7 @@ void freeClientsInAsyncFreeQueue(void) {
  * are not registered clients. */
 client *lookupClientByID(uint64_t id) {
     id = htonu64(id);
-    client *c = raxFind(server.clients_index,(unsigned char*)&id,sizeof(id));
+    client *c = (client*)raxFind(server.clients_index,(unsigned char*)&id,sizeof(id));
     return (c == raxNotFound) ? NULL : c;
 }
 
@@ -982,7 +985,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
                 c->sentlen = 0;
             }
         } else {
-            o = listNodeValue(listFirst(c->reply));
+            o = (clientReplyBlock*)listNodeValue(listFirst(c->reply));
             objlen = o->used;
 
             if (objlen == 0) {
@@ -1059,7 +1062,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(el);
     UNUSED(mask);
-    writeToClient(fd,privdata,1);
+    writeToClient(fd, (client*)privdata,1);
 }
 
 /* This function is called just before entering the event loop, in the hope
@@ -1073,7 +1076,7 @@ int handleClientsWithPendingWrites(void) {
 
     listRewind(server.clients_pending_write,&li);
     while((ln = listNext(&li))) {
-        client *c = listNodeValue(ln);
+        client *c = (client*)listNodeValue(ln);
         c->flags &= ~CLIENT_PENDING_WRITE;
         listDelNode(server.clients_pending_write,ln);
 
@@ -1212,7 +1215,7 @@ int processInlineBuffer(client *c) {
     /* Setup argv array on client structure */
     if (argc) {
         if (c->argv) zfree(c->argv);
-        c->argv = zmalloc(sizeof(robj*)*argc);
+        c->argv = (robj**)zmalloc(sizeof(robj*)*argc);
     }
 
     /* Create redis objects for all arguments. */
@@ -1310,7 +1313,7 @@ int processMultibulkBuffer(client *c) {
 
         /* Setup argv array on client structure */
         if (c->argv) zfree(c->argv);
-        c->argv = zmalloc(sizeof(robj*)*c->multibulklen);
+        c->argv = (robj**)zmalloc(sizeof(robj*)*c->multibulklen);
     }
 
     serverAssertWithInfo(c,NULL,c->multibulklen > 0);
@@ -1583,7 +1586,7 @@ void getClientsMaxBuffers(unsigned long *longest_output_list,
 
     listRewind(server.clients,&li);
     while ((ln = listNext(&li)) != NULL) {
-        c = listNodeValue(ln);
+        c = (client*)listNodeValue(ln);
 
         if (listLength(c->reply) > lol) lol = listLength(c->reply);
         if (sdslen(c->querybuf) > bib) bib = sdslen(c->querybuf);
@@ -1665,7 +1668,7 @@ sds catClientInfoString(sds s, client *client) {
         getClientPeerId(client),
         client->fd,
         client->name ? (char*)client->name->ptr : "",
-        (long long)(server.unixtime - client->ctime),
+        (long long)(server.unixtime - client->_ctime),
         (long long)(server.unixtime - client->lastinteraction),
         flags,
         client->db->id,
@@ -1684,14 +1687,14 @@ sds catClientInfoString(sds s, client *client) {
 sds getAllClientsInfoString(int type) {
     listNode *ln;
     listIter li;
-    client *client;
+    client *_client;
     sds o = sdsnewlen(SDS_NOINIT,200*listLength(server.clients));
     sdsclear(o);
     listRewind(server.clients,&li);
     while ((ln = listNext(&li)) != NULL) {
-        client = listNodeValue(ln);
-        if (type != -1 && getClientType(client) != type) continue;
-        o = catClientInfoString(o,client);
+        _client = (client*)listNodeValue(ln);
+        if (type != -1 && getClientType(_client) != type) continue;
+        o = catClientInfoString(o, _client);
         o = sdscatlen(o,"\n",1);
     }
     return o;
@@ -1700,9 +1703,9 @@ sds getAllClientsInfoString(int type) {
 void clientCommand(client *c) {
     listNode *ln;
     listIter li;
-    client *client;
+    client *_client;
 
-    if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
+    if (c->argc == 2 && !strcasecmp((const char *)c->argv[1]->ptr,"help")) {
         const char *help[] = {
 "id                     -- Return the ID of the current connection.",
 "getname                -- Return the name of the current connection.",
@@ -1720,14 +1723,14 @@ void clientCommand(client *c) {
 NULL
         };
         addReplyHelp(c, help);
-    } else if (!strcasecmp(c->argv[1]->ptr,"id") && c->argc == 2) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"id") && c->argc == 2) {
         /* CLIENT ID */
         addReplyLongLong(c,c->id);
-    } else if (!strcasecmp(c->argv[1]->ptr,"list")) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"list")) {
         /* CLIENT LIST */
         int type = -1;
-        if (c->argc == 4 && !strcasecmp(c->argv[2]->ptr,"type")) {
-            type = getClientTypeByName(c->argv[3]->ptr);
+        if (c->argc == 4 && !strcasecmp((const char*)c->argv[2]->ptr,"type")) {
+            type = getClientTypeByName((char*)c->argv[3]->ptr);
             if (type == -1) {
                 addReplyErrorFormat(c,"Unknown client type '%s'",
                     (char*) c->argv[3]->ptr);
@@ -1740,21 +1743,21 @@ NULL
         sds o = getAllClientsInfoString(type);
         addReplyBulkCBuffer(c,o,sdslen(o));
         sdsfree(o);
-    } else if (!strcasecmp(c->argv[1]->ptr,"reply") && c->argc == 3) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"reply") && c->argc == 3) {
         /* CLIENT REPLY ON|OFF|SKIP */
-        if (!strcasecmp(c->argv[2]->ptr,"on")) {
+        if (!strcasecmp((const char*)c->argv[2]->ptr,"on")) {
             c->flags &= ~(CLIENT_REPLY_SKIP|CLIENT_REPLY_OFF);
             addReply(c,shared.ok);
-        } else if (!strcasecmp(c->argv[2]->ptr,"off")) {
+        } else if (!strcasecmp((const char*)c->argv[2]->ptr,"off")) {
             c->flags |= CLIENT_REPLY_OFF;
-        } else if (!strcasecmp(c->argv[2]->ptr,"skip")) {
+        } else if (!strcasecmp((const char*)c->argv[2]->ptr,"skip")) {
             if (!(c->flags & CLIENT_REPLY_OFF))
                 c->flags |= CLIENT_REPLY_SKIP_NEXT;
         } else {
             addReply(c,shared.syntaxerr);
             return;
         }
-    } else if (!strcasecmp(c->argv[1]->ptr,"kill")) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"kill")) {
         /* CLIENT KILL <ip:port>
          * CLIENT KILL <option> [value] ... <option> [value] */
         char *addr = NULL;
@@ -1765,7 +1768,7 @@ NULL
 
         if (c->argc == 3) {
             /* Old style syntax: CLIENT KILL <addr> */
-            addr = c->argv[2]->ptr;
+            addr = (char *)c->argv[2]->ptr;
             skipme = 0; /* With the old form, you can kill yourself. */
         } else if (c->argc > 3) {
             int i = 2; /* Next option index. */
@@ -1774,25 +1777,25 @@ NULL
             while(i < c->argc) {
                 int moreargs = c->argc > i+1;
 
-                if (!strcasecmp(c->argv[i]->ptr,"id") && moreargs) {
+                if (!strcasecmp((const char*)c->argv[i]->ptr,"id") && moreargs) {
                     long long tmp;
 
                     if (getLongLongFromObjectOrReply(c,c->argv[i+1],&tmp,NULL)
                         != C_OK) return;
                     id = tmp;
-                } else if (!strcasecmp(c->argv[i]->ptr,"type") && moreargs) {
-                    type = getClientTypeByName(c->argv[i+1]->ptr);
+                } else if (!strcasecmp((const char*)c->argv[i]->ptr,"type") && moreargs) {
+                    type = getClientTypeByName((char*)c->argv[i+1]->ptr);
                     if (type == -1) {
                         addReplyErrorFormat(c,"Unknown client type '%s'",
                             (char*) c->argv[i+1]->ptr);
                         return;
                     }
-                } else if (!strcasecmp(c->argv[i]->ptr,"addr") && moreargs) {
-                    addr = c->argv[i+1]->ptr;
-                } else if (!strcasecmp(c->argv[i]->ptr,"skipme") && moreargs) {
-                    if (!strcasecmp(c->argv[i+1]->ptr,"yes")) {
+                } else if (!strcasecmp((const char*)c->argv[i]->ptr,"addr") && moreargs) {
+                    addr = (char*)c->argv[i+1]->ptr;
+                } else if (!strcasecmp((const char*)c->argv[i]->ptr,"skipme") && moreargs) {
+                    if (!strcasecmp((const char*)c->argv[i+1]->ptr,"yes")) {
                         skipme = 1;
-                    } else if (!strcasecmp(c->argv[i+1]->ptr,"no")) {
+                    } else if (!strcasecmp((const char*)c->argv[i+1]->ptr,"no")) {
                         skipme = 0;
                     } else {
                         addReply(c,shared.syntaxerr);
@@ -1812,17 +1815,17 @@ NULL
         /* Iterate clients killing all the matching clients. */
         listRewind(server.clients,&li);
         while ((ln = listNext(&li)) != NULL) {
-            client = listNodeValue(ln);
-            if (addr && strcmp(getClientPeerId(client),addr) != 0) continue;
-            if (type != -1 && getClientType(client) != type) continue;
-            if (id != 0 && client->id != id) continue;
-            if (c == client && skipme) continue;
+            _client = (client*)listNodeValue(ln);
+            if (addr && strcmp(getClientPeerId(_client),addr) != 0) continue;
+            if (type != -1 && getClientType(_client) != type) continue;
+            if (id != 0 && _client->id != id) continue;
+            if (c == _client && skipme) continue;
 
             /* Kill it. */
-            if (c == client) {
+            if (c == _client) {
                 close_this_client = 1;
             } else {
-                freeClient(client);
+                freeClient(_client);
             }
             killed++;
         }
@@ -1840,7 +1843,7 @@ NULL
         /* If this client has to be closed, flag it as CLOSE_AFTER_REPLY
          * only after we queued the reply to its output buffers. */
         if (close_this_client) c->flags |= CLIENT_CLOSE_AFTER_REPLY;
-    } else if (!strcasecmp(c->argv[1]->ptr,"unblock") && (c->argc == 3 ||
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"unblock") && (c->argc == 3 ||
                                                           c->argc == 4))
     {
         /* CLIENT UNBLOCK <id> [timeout|error] */
@@ -1848,9 +1851,9 @@ NULL
         int unblock_error = 0;
 
         if (c->argc == 4) {
-            if (!strcasecmp(c->argv[3]->ptr,"timeout")) {
+            if (!strcasecmp((const char*)c->argv[3]->ptr,"timeout")) {
                 unblock_error = 0;
-            } else if (!strcasecmp(c->argv[3]->ptr,"error")) {
+            } else if (!strcasecmp((const char*)c->argv[3]->ptr,"error")) {
                 unblock_error = 1;
             } else {
                 addReplyError(c,
@@ -1860,7 +1863,7 @@ NULL
         }
         if (getLongLongFromObjectOrReply(c,c->argv[2],&id,NULL)
             != C_OK) return;
-        struct client *target = lookupClientByID(id);
+        client *target = lookupClientByID(id);
         if (target && target->flags & CLIENT_BLOCKED) {
             if (unblock_error)
                 addReplyError(target,
@@ -1872,9 +1875,9 @@ NULL
         } else {
             addReply(c,shared.czero);
         }
-    } else if (!strcasecmp(c->argv[1]->ptr,"setname") && c->argc == 3) {
-        int j, len = sdslen(c->argv[2]->ptr);
-        char *p = c->argv[2]->ptr;
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"setname") && c->argc == 3) {
+        int j, len = sdslen((const sds)c->argv[2]->ptr);
+        char *p = (char *)c->argv[2]->ptr;
 
         /* Setting the client name to an empty string actually removes
          * the current name. */
@@ -1900,12 +1903,12 @@ NULL
         c->name = c->argv[2];
         incrRefCount(c->name);
         addReply(c,shared.ok);
-    } else if (!strcasecmp(c->argv[1]->ptr,"getname") && c->argc == 2) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"getname") && c->argc == 2) {
         if (c->name)
             addReplyBulk(c,c->name);
         else
             addReply(c,shared.nullbulk);
-    } else if (!strcasecmp(c->argv[1]->ptr,"pause") && c->argc == 3) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"pause") && c->argc == 3) {
         long long duration;
 
         if (getTimeoutFromObjectOrReply(c,c->argv[2],&duration,UNIT_MILLISECONDS)
@@ -1945,7 +1948,7 @@ void rewriteClientCommandVector(client *c, int argc, ...) {
     int j;
     robj **argv; /* The new argument vector */
 
-    argv = zmalloc(sizeof(robj*)*argc);
+    argv = (robj**)zmalloc(sizeof(robj*)*argc);
     va_start(ap,argc);
     for (j = 0; j < argc; j++) {
         robj *a;
@@ -1962,7 +1965,7 @@ void rewriteClientCommandVector(client *c, int argc, ...) {
     /* Replace argv and argc with our new versions. */
     c->argv = argv;
     c->argc = argc;
-    c->cmd = lookupCommandOrOriginal(c->argv[0]->ptr);
+    c->cmd = lookupCommandOrOriginal((sds)c->argv[0]->ptr);
     serverAssertWithInfo(c,NULL,c->cmd != NULL);
     va_end(ap);
 }
@@ -1973,7 +1976,7 @@ void replaceClientCommandVector(client *c, int argc, robj **argv) {
     zfree(c->argv);
     c->argv = argv;
     c->argc = argc;
-    c->cmd = lookupCommandOrOriginal(c->argv[0]->ptr);
+    c->cmd = lookupCommandOrOriginal((sds)c->argv[0]->ptr);
     serverAssertWithInfo(c,NULL,c->cmd != NULL);
 }
 
@@ -1992,7 +1995,7 @@ void rewriteClientCommandArgument(client *c, int i, robj *newval) {
     robj *oldval;
 
     if (i >= c->argc) {
-        c->argv = zrealloc(c->argv,sizeof(robj*)*(i+1));
+        c->argv = (robj**)zrealloc(c->argv,sizeof(robj*)*(i+1));
         c->argc = i+1;
         c->argv[i] = NULL;
     }
@@ -2003,7 +2006,7 @@ void rewriteClientCommandArgument(client *c, int i, robj *newval) {
 
     /* If this is the command name make sure to fix c->cmd. */
     if (i == 0) {
-        c->cmd = lookupCommandOrOriginal(c->argv[0]->ptr);
+        c->cmd = lookupCommandOrOriginal((sds)c->argv[0]->ptr);
         serverAssertWithInfo(c,NULL,c->cmd != NULL);
     }
 }
@@ -2052,8 +2055,8 @@ int getClientTypeByName(char *name) {
     else return -1;
 }
 
-char *getClientTypeName(int class) {
-    switch(class) {
+char *getClientTypeName(int _class) {
+    switch(_class) {
     case CLIENT_TYPE_NORMAL: return "normal";
     case CLIENT_TYPE_SLAVE:  return "slave";
     case CLIENT_TYPE_PUBSUB: return "pubsub";
@@ -2069,19 +2072,19 @@ char *getClientTypeName(int class) {
  * Return value: non-zero if the client reached the soft or the hard limit.
  *               Otherwise zero is returned. */
 int checkClientOutputBufferLimits(client *c) {
-    int soft = 0, hard = 0, class;
+    int soft = 0, hard = 0, _class;
     unsigned long used_mem = getClientOutputBufferMemoryUsage(c);
 
-    class = getClientType(c);
+    _class = getClientType(c);
     /* For the purpose of output buffer limiting, masters are handled
      * like normal clients. */
-    if (class == CLIENT_TYPE_MASTER) class = CLIENT_TYPE_NORMAL;
+    if (_class == CLIENT_TYPE_MASTER) _class = CLIENT_TYPE_NORMAL;
 
-    if (server.client_obuf_limits[class].hard_limit_bytes &&
-        used_mem >= server.client_obuf_limits[class].hard_limit_bytes)
+    if (server.client_obuf_limits[_class].hard_limit_bytes &&
+        used_mem >= server.client_obuf_limits[_class].hard_limit_bytes)
         hard = 1;
-    if (server.client_obuf_limits[class].soft_limit_bytes &&
-        used_mem >= server.client_obuf_limits[class].soft_limit_bytes)
+    if (server.client_obuf_limits[_class].soft_limit_bytes &&
+        used_mem >= server.client_obuf_limits[_class].soft_limit_bytes)
         soft = 1;
 
     /* We need to check if the soft limit is reached continuously for the
@@ -2094,7 +2097,7 @@ int checkClientOutputBufferLimits(client *c) {
             time_t elapsed = server.unixtime - c->obuf_soft_limit_reached_time;
 
             if (elapsed <=
-                server.client_obuf_limits[class].soft_limit_seconds) {
+                server.client_obuf_limits[_class].soft_limit_seconds) {
                 soft = 0; /* The client still did not reached the max number of
                              seconds for the soft limit to be considered
                              reached. */
@@ -2136,7 +2139,7 @@ void flushSlavesOutputBuffers(void) {
 
     listRewind(server.slaves,&li);
     while((ln = listNext(&li))) {
-        client *slave = listNodeValue(ln);
+        client *slave = (client*)listNodeValue(ln);
         int events;
 
         /* Note that the following will not flush output buffers of slaves
@@ -2194,7 +2197,7 @@ int clientsArePaused(void) {
          * force the re-processing of the input buffer if any. */
         listRewind(server.clients,&li);
         while ((ln = listNext(&li)) != NULL) {
-            c = listNodeValue(ln);
+            c = (client*)listNodeValue(ln);
 
             /* Don't touch slaves and blocked clients.
              * The latter pending requests will be processed when unblocked. */

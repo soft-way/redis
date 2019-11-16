@@ -35,7 +35,8 @@ public:
 
     void SetEventLogIdentity(const char* identity);
 
-    void LogMessage(LPCSTR msg, const WORD type);
+    void LogMessage(const char *msg, unsigned short type);
+//    void LogMessage(LPCSTR msg, const WORD type);
     void LogError(string msg);
 
     string GetEventLogIdentity();

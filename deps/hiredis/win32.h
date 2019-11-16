@@ -3,7 +3,7 @@
 #ifdef _MSC_VER
 
 #ifndef inline
-#define inline __inline
+//#define inline __inline
 #endif
 
 #ifndef va_copy

@@ -354,7 +354,7 @@ int memtest_preserving_test(unsigned long *m, size_t bytes, int passes) {
 /* Perform an interactive test allocating the specified number of megabytes. */
 void memtest_alloc_and_test(size_t megabytes, int passes) {
     size_t bytes = megabytes*1024*1024;
-    unsigned long *m = malloc(bytes);
+    unsigned long *m = (unsigned long*)malloc(bytes);
 
     if (m == NULL) {
         fprintf(stderr,"Unable to allocate %zu megabytes: %s",

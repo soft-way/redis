@@ -1,7 +1,9 @@
 #ifndef JEMALLOC_INTERNAL_PROF_INLINES_B_H
 #define JEMALLOC_INTERNAL_PROF_INLINES_B_H
 
+#include "jemalloc/internal/safety_check.h"
 #include "jemalloc/internal/sz.h"
+#include "jemalloc/internal/thread_event.h"
 
 JEMALLOC_ALWAYS_INLINE bool
 prof_gdump_get_unlocked(void) {
@@ -21,6 +23,7 @@ prof_tdata_get(tsd_t *tsd, bool create) {
 
 	tdata = tsd_prof_tdata_get(tsd);
 	if (create) {
+		assert(tsd_reentrancy_level_get(tsd) == 0);
 		if (unlikely(tdata == NULL)) {
 			if (tsd_nominal(tsd)) {
 				tdata = prof_tdata_init(tsd);
@@ -62,54 +65,36 @@ prof_tctx_reset(tsdn_t *tsdn, const void *ptr, prof_tctx_t *tctx) {
 }
 
 JEMALLOC_ALWAYS_INLINE nstime_t
-prof_alloc_time_get(tsdn_t *tsdn, const void *ptr, alloc_ctx_t *alloc_ctx) {
+prof_alloc_time_get(tsdn_t *tsdn, const void *ptr) {
 	cassert(config_prof);
 	assert(ptr != NULL);
 
-	return arena_prof_alloc_time_get(tsdn, ptr, alloc_ctx);
+	return arena_prof_alloc_time_get(tsdn, ptr);
 }
 
 JEMALLOC_ALWAYS_INLINE void
-prof_alloc_time_set(tsdn_t *tsdn, const void *ptr, alloc_ctx_t *alloc_ctx,
-    nstime_t t) { 
+prof_alloc_time_set(tsdn_t *tsdn, const void *ptr, nstime_t t) {
 	cassert(config_prof);
 	assert(ptr != NULL);
 
-	arena_prof_alloc_time_set(tsdn, ptr, alloc_ctx, t);
-}
-
-JEMALLOC_ALWAYS_INLINE bool
-prof_sample_check(tsd_t *tsd, size_t usize, bool update) {
-	ssize_t check = update ? 0 : usize;
-
-	int64_t bytes_until_sample = tsd_bytes_until_sample_get(tsd);
-	if (update) {
-		bytes_until_sample -= usize;
-		if (tsd_nominal(tsd)) {
-			tsd_bytes_until_sample_set(tsd, bytes_until_sample);
-		}
-	}
-	if (likely(bytes_until_sample >= check)) {
-		return true;
-	}
-
-	return false;
+	arena_prof_alloc_time_set(tsdn, ptr, t);
 }
 
 JEMALLOC_ALWAYS_INLINE bool
 prof_sample_accum_update(tsd_t *tsd, size_t usize, bool update,
-			 prof_tdata_t **tdata_out) {
-	prof_tdata_t *tdata;
-
+    prof_tdata_t **tdata_out) {
 	cassert(config_prof);
 
 	/* Fastpath: no need to load tdata */
-	if (likely(prof_sample_check(tsd, usize, update))) {
+	if (likely(prof_sample_event_wait_get(tsd) > 0)) {
 		return true;
 	}
 
-	bool booted = tsd_prof_tdata_get(tsd);
-	tdata = prof_tdata_get(tsd, true);
+	if (tsd_reentrancy_level_get(tsd) > 0) {
+		return true;
+	}
+
+	prof_tdata_t *tdata = prof_tdata_get(tsd, true);
 	if (unlikely((uintptr_t)tdata <= (uintptr_t)PROF_TDATA_STATE_MAX)) {
 		tdata = NULL;
 	}
@@ -122,21 +107,9 @@ prof_sample_accum_update(tsd_t *tsd, size_t usize, bool update,
 		return true;
 	}
 
-	/*
-	 * If this was the first creation of tdata, then
-	 * prof_tdata_get() reset bytes_until_sample, so decrement and
-	 * check it again
-	 */
-	if (!booted && prof_sample_check(tsd, usize, update)) {
-		return true;
-	}
-
-	if (tsd_reentrancy_level_get(tsd) > 0) {
-		return true;
-	}
 	/* Compute new sample threshold. */
 	if (update) {
-		prof_sample_threshold_update(tdata);
+		prof_sample_threshold_update(tsd);
 	}
 	return !tdata->active;
 }
@@ -154,7 +127,7 @@ prof_alloc_prep(tsd_t *tsd, size_t usize, bool prof_active, bool update) {
 		ret = (prof_tctx_t *)(uintptr_t)1U;
 	} else {
 		bt_init(&bt, tdata->vec);
-		prof_backtrace(&bt);
+		prof_backtrace(tsd, &bt);
 		ret = prof_lookup(tsd, &bt);
 	}
 

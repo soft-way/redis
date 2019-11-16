@@ -38,6 +38,11 @@
  * This should be the size of the buffer given to ld2string */
 #define MAX_LONG_DOUBLE_CHARS 5*1024
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 int stringmatchlen(const char *p, int plen, const char *s, int slen, int nocase);
 int stringmatch(const char *p, const char *s, int nocase);
 int stringmatchlen_fuzz_test(void);
@@ -53,9 +58,16 @@ int ld2string(char *buf, size_t len, long double value, int humanfriendly);
 sds getAbsolutePath(char *filename);
 unsigned long getTimeZone(void);
 int pathIsBaseName(char *path);
+void getRandomHexChars(char* p, size_t len);
+
+void getRandomBytes(unsigned char* p, size_t len);
 
 #ifdef REDIS_TEST
 int utilTest(int argc, char **argv);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

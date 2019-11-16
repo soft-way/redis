@@ -75,10 +75,10 @@ void lwTranslatePixelsGroup(int byte, char *output) {
 
 /* Allocate and return a new canvas of the specified size. */
 lwCanvas *lwCreateCanvas(int width, int height) {
-    lwCanvas *canvas = zmalloc(sizeof(*canvas));
+    lwCanvas *canvas = (lwCanvas*)zmalloc(sizeof(*canvas));
     canvas->width = width;
     canvas->height = height;
-    canvas->pixels = zmalloc(width*height);
+    canvas->pixels = (char *)zmalloc(width*height);
     memset(canvas->pixels,0,width*height);
     return canvas;
 }

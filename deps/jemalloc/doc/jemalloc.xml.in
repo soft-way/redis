@@ -424,7 +424,7 @@ for (i = 0; i < nbins; i++) {
       called repeatedly.  General information that never changes during
       execution can be omitted by specifying <quote>g</quote> as a character
       within the <parameter>opts</parameter> string.  Note that
-      <function>malloc_message()</function> uses the
+      <function>malloc_stats_print()</function> uses the
       <function>mallctl*()</function> functions internally, so inconsistent
       statistics can be reported if multiple threads use these functions
       simultaneously.  If <option>--enable-stats</option> is specified during
@@ -904,6 +904,23 @@ mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".decay",
         </para></listitem>
       </varlistentry>
 
+      <varlistentry id="opt.confirm_conf">
+        <term>
+          <mallctl>opt.confirm_conf</mallctl>
+          (<type>bool</type>)
+          <literal>r-</literal>
+        </term>
+	<listitem><para>Confirm-runtime-options-when-program-starts
+	enabled/disabled.  If true, the string specified via
+	<option>--with-malloc-conf</option>, the string pointed to by the
+	global variable <varname>malloc_conf</varname>, the <quote>name</quote>
+	of the file referenced by the symbolic link named
+	<filename class="symlink">/etc/malloc.conf</filename>, and the value of
+	the environment variable <envar>MALLOC_CONF</envar>, will be printed in
+	order.  Then, each option being set will be individually printed.  This
+	option is disabled by default.</para></listitem>
+      </varlistentry>
+
       <varlistentry id="opt.abort_conf">
         <term>
           <mallctl>opt.abort_conf</mallctl>
@@ -946,17 +963,17 @@ mallctl("arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".decay",
         linkend="stats.retained">stats.retained</link> for related details).
         It also makes jemalloc use <citerefentry>
         <refentrytitle>mmap</refentrytitle><manvolnum>2</manvolnum>
-        </citerefentry> in a more greedy way, mapping larger chunks in one go.
-        This option is disabled by default unless discarding virtual memory is
-        known to trigger
-        platform-specific performance problems, e.g. for [64-bit] Linux, which
-        has a quirk in its virtual memory allocation algorithm that causes
-        semi-permanent VM map holes under normal jemalloc operation.  Although
-        <citerefentry><refentrytitle>munmap</refentrytitle>
-        <manvolnum>2</manvolnum></citerefentry> causes issues on 32-bit Linux as
-        well, retaining virtual memory for 32-bit Linux is disabled by default
-        due to the practical possibility of address space exhaustion.
-        </para></listitem>
+        </citerefentry> or equivalent in a more greedy way, mapping larger
+        chunks in one go.  This option is disabled by default unless discarding
+        virtual memory is known to trigger platform-specific performance
+        problems, namely 1) for [64-bit] Linux, which has a quirk in its virtual
+        memory allocation algorithm that causes semi-permanent VM map holes
+        under normal jemalloc operation; and 2) for [64-bit] Windows, which
+        disallows split / merged regions with
+        <parameter><constant>MEM_RELEASE</constant></parameter>.  Although the
+        same issues may present on 32-bit platforms as well, retaining virtual
+        memory for 32-bit Linux and Windows is disabled by default due to the
+        practical possibility of address space exhaustion.  </para></listitem>
       </varlistentry>
 
       <varlistentry id="opt.dss">
@@ -1327,7 +1344,10 @@ malloc_conf = "xmalloc:true";]]></programlisting>
         set to the empty string, no automatic dumps will occur; this is
         primarily useful for disabling the automatic final heap dump (which
         also disables leak reporting, if enabled).  The default prefix is
-        <filename>jeprof</filename>.</para></listitem>
+        <filename>jeprof</filename>.  This prefix value can be overriden by
+        <link
+        linkend="prof.dump_prefix"><mallctl>prof.dump_prefix</mallctl></link>.
+        </para></listitem>
       </varlistentry>
 
       <varlistentry id="opt.prof_active">
@@ -1406,8 +1426,10 @@ malloc_conf = "xmalloc:true";]]></programlisting>
         <filename>&lt;prefix&gt;.&lt;pid&gt;.&lt;seq&gt;.i&lt;iseq&gt;.heap</filename>,
         where <literal>&lt;prefix&gt;</literal> is controlled by the
         <link
-        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link>
-        option.  By default, interval-triggered profile dumping is disabled
+        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link> and
+        <link
+        linkend="prof.dump_prefix"><mallctl>prof.dump_prefix</mallctl></link>
+        options.  By default, interval-triggered profile dumping is disabled
         (encoded as -1).
         </para></listitem>
       </varlistentry>
@@ -1439,8 +1461,10 @@ malloc_conf = "xmalloc:true";]]></programlisting>
         usage to a file named according to the pattern
         <filename>&lt;prefix&gt;.&lt;pid&gt;.&lt;seq&gt;.f.heap</filename>,
         where <literal>&lt;prefix&gt;</literal> is controlled by the <link
-        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link>
-        option.  Note that <function>atexit()</function> may allocate
+        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link> and
+        <link
+        linkend="prof.dump_prefix"><mallctl>prof.dump_prefix</mallctl></link>
+        options.  Note that <function>atexit()</function> may allocate
         memory during application initialization and then deadlock internally
         when jemalloc in turn calls <function>atexit()</function>, so
         this option is not universally usable (though the application can
@@ -1463,6 +1487,33 @@ malloc_conf = "xmalloc:true";]]></programlisting>
         <link linkend="opt.prof"><mallctl>opt.prof</mallctl></link> option for
         information on analyzing heap profile output.  This option is disabled
         by default.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="opt.zero_realloc">
+        <term>
+          <mallctl>opt.zero_realloc</mallctl>
+          (<type>const char *</type>)
+          <literal>r-</literal>
+        </term>
+        <listitem><para> Determines the behavior of
+	<function>realloc()</function> when passed a value of zero for the new
+	size.  <quote>strict</quote> treats this as an allocation of size zero
+	(and returns a non-null result except in case of resource exhaustion).
+	<quote>free</quote> treats this as a deallocation of the pointer, and
+	returns <constant>NULL</constant> without setting
+	<varname>errno</varname>.  <quote>abort</quote> aborts the process if
+	zero is passed.  The default is <quote>strict</quote>.</para>
+
+	<para>There is considerable divergence of behaviors across
+	implementations in handling this case. Many have the behavior of
+	<quote>free</quote>. This can introduce security vulnerabilities, since
+	a <constant>NULL</constant> return value indicates failure, and the
+	continued validity of the passed-in pointer (per POSIX and C11).
+	<quote>strict</quote> is safe, but can cause leaks in programs that
+	expect the common behavior.  Programs intended to be portable and
+	leak-free cannot assume either behavior, and must therefore never call
+	realloc with a size of 0.  The <quote>abort</quote> option enables these
+	testing this behavior.</para></listitem>
       </varlistentry>
 
       <varlistentry id="thread.arena">
@@ -2207,8 +2258,25 @@ struct extent_hooks_s {
         <filename>&lt;prefix&gt;.&lt;pid&gt;.&lt;seq&gt;.m&lt;mseq&gt;.heap</filename>,
         where <literal>&lt;prefix&gt;</literal> is controlled by the
         <link
+        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link> and
+        <link
+        linkend="prof.dump_prefix"><mallctl>prof.dump_prefix</mallctl></link>
+        options.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="prof.dump_prefix">
+        <term>
+          <mallctl>prof.dump_prefix</mallctl>
+          (<type>const char *</type>)
+          <literal>-w</literal>
+          [<option>--enable-prof</option>]
+        </term>
+        <listitem><para>Set the filename prefix for profile dumps. See
+        <link
         linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link>
-        option.</para></listitem>
+        for the default setting.  This can be useful to differentiate profile
+        dumps such as from forked processes.
+        </para></listitem>
       </varlistentry>
 
       <varlistentry id="prof.gdump">
@@ -2223,8 +2291,10 @@ struct extent_hooks_s {
         dumped to files named according to the pattern
         <filename>&lt;prefix&gt;.&lt;pid&gt;.&lt;seq&gt;.u&lt;useq&gt;.heap</filename>,
         where <literal>&lt;prefix&gt;</literal> is controlled by the <link
-        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link>
-        option.</para></listitem>
+        linkend="opt.prof_prefix"><mallctl>opt.prof_prefix</mallctl></link> and
+        <link
+        linkend="prof.dump_prefix"><mallctl>prof.dump_prefix</mallctl></link>
+        options.</para></listitem>
       </varlistentry>
 
       <varlistentry id="prof.reset">
@@ -2381,6 +2451,21 @@ struct extent_hooks_s {
         </para></listitem>
       </varlistentry>
 
+      <varlistentry id="stats.zero_reallocs">
+        <term>
+          <mallctl>stats.zero_reallocs</mallctl>
+          (<type>size_t</type>)
+          <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+        <listitem><para>Number of times that the <function>realloc()</function>
+        was called with a non-<constant>NULL</constant> pointer argument and a
+        <constant>0</constant> size argument.  This is a fundamentally unsafe
+        pattern in portable programs; see <link linkend="opt.zero_realloc">
+        <mallctl>opt.zero_realloc</mallctl></link> for details.
+        </para></listitem>
+      </varlistentry>
+
       <varlistentry id="stats.background_thread.num_threads">
         <term>
           <mallctl>stats.background_thread.num_threads</mallctl>
@@ -2489,6 +2574,30 @@ struct extent_hooks_s {
         <listitem><para>Statistics on <varname>prof</varname> mutex (global
         scope; profiling related).  <mallctl>{counter}</mallctl> is one of the
         counters in <link linkend="mutex_counters">mutex profiling
+        counters</link>.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="stats.mutexes.prof_tdatas">
+        <term>
+          <mallctl>stats.mutexes.prof_thds_data.{counter}</mallctl>
+	  (<type>counter specific type</type>) <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+	<listitem><para>Statistics on <varname>prof</varname> threads data mutex
+	(global scope; profiling related).  <mallctl>{counter}</mallctl> is one
+	of the counters in <link linkend="mutex_counters">mutex profiling
+        counters</link>.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="stats.mutexes.prof_dump">
+        <term>
+          <mallctl>stats.mutexes.prof_dump.{counter}</mallctl>
+	  (<type>counter specific type</type>) <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+	<listitem><para>Statistics on <varname>prof</varname> dumping mutex
+	(global scope; profiling related).  <mallctl>{counter}</mallctl> is one
+	of the counters in <link linkend="mutex_counters">mutex profiling
         counters</link>.</para></listitem>
       </varlistentry>
 
@@ -2798,6 +2907,28 @@ struct extent_hooks_s {
         all bin size classes.</para></listitem>
       </varlistentry>
 
+      <varlistentry id="stats.arenas.i.small.nfills">
+        <term>
+          <mallctl>stats.arenas.&lt;i&gt;.small.nfills</mallctl>
+          (<type>uint64_t</type>)
+          <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+        <listitem><para>Cumulative number of tcache fills by all small size
+	classes.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="stats.arenas.i.small.nflushes">
+        <term>
+          <mallctl>stats.arenas.&lt;i&gt;.small.nflushes</mallctl>
+          (<type>uint64_t</type>)
+          <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+        <listitem><para>Cumulative number of tcache flushes by all small size
+        classes.</para></listitem>
+      </varlistentry>
+
       <varlistentry id="stats.arenas.i.large.allocated">
         <term>
           <mallctl>stats.arenas.&lt;i&gt;.large.allocated</mallctl>
@@ -2846,6 +2977,28 @@ struct extent_hooks_s {
         </term>
         <listitem><para>Cumulative number of allocation requests satisfied by
         all large size classes.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="stats.arenas.i.large.nfills">
+        <term>
+          <mallctl>stats.arenas.&lt;i&gt;.large.nfills</mallctl>
+          (<type>uint64_t</type>)
+          <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+        <listitem><para>Cumulative number of tcache fills by all large size
+	classes.</para></listitem>
+      </varlistentry>
+
+      <varlistentry id="stats.arenas.i.large.nflushes">
+        <term>
+          <mallctl>stats.arenas.&lt;i&gt;.large.nflushes</mallctl>
+          (<type>uint64_t</type>)
+          <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+        <listitem><para>Cumulative number of tcache flushes by all large size
+        classes.</para></listitem>
       </varlistentry>
 
       <varlistentry id="stats.arenas.i.bins.j.nmalloc">
@@ -2945,6 +3098,17 @@ struct extent_hooks_s {
           [<option>--enable-stats</option>]
         </term>
         <listitem><para>Current number of slabs.</para></listitem>
+      </varlistentry>
+
+
+      <varlistentry id="stats.arenas.i.bins.j.nonfull_slabs">
+        <term>
+          <mallctl>stats.arenas.&lt;i&gt;.bins.&lt;j&gt;.nonfull_slabs</mallctl>
+          (<type>size_t</type>)
+          <literal>r-</literal>
+          [<option>--enable-stats</option>]
+        </term>
+        <listitem><para>Current number of nonfull slabs.</para></listitem>
       </varlistentry>
 
       <varlistentry id="stats.arenas.i.bins.mutex">

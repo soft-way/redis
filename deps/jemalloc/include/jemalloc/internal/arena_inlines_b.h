@@ -8,6 +8,12 @@
 #include "jemalloc/internal/sz.h"
 #include "jemalloc/internal/ticker.h"
 
+static inline arena_t *
+arena_get_from_extent(extent_t *extent) {
+	return (arena_t *)atomic_load_p(&arenas[extent_arena_ind_get(extent)],
+	    ATOMIC_RELAXED);
+}
+
 JEMALLOC_ALWAYS_INLINE bool
 arena_has_default_hooks(arena_t *arena) {
 	return (extent_hooks_get(arena) == &extent_hooks_default);
@@ -84,13 +90,12 @@ arena_prof_tctx_reset(tsdn_t *tsdn, const void *ptr, prof_tctx_t *tctx) {
 }
 
 JEMALLOC_ALWAYS_INLINE nstime_t
-arena_prof_alloc_time_get(tsdn_t *tsdn, const void *ptr,
-    alloc_ctx_t *alloc_ctx) {
+arena_prof_alloc_time_get(tsdn_t *tsdn, const void *ptr) {
 	cassert(config_prof);
 	assert(ptr != NULL);
 
 	extent_t *extent = iealloc(tsdn, ptr);
-	/* 
+	/*
 	 * Unlike arena_prof_prof_tctx_{get, set}, we only call this once we're
 	 * sure we have a sampled allocation.
 	 */
@@ -99,8 +104,7 @@ arena_prof_alloc_time_get(tsdn_t *tsdn, const void *ptr,
 }
 
 JEMALLOC_ALWAYS_INLINE void
-arena_prof_alloc_time_set(tsdn_t *tsdn, const void *ptr, alloc_ctx_t *alloc_ctx,
-    nstime_t t) {
+arena_prof_alloc_time_set(tsdn_t *tsdn, const void *ptr, nstime_t t) {
 	cassert(config_prof);
 	assert(ptr != NULL);
 
@@ -178,7 +182,8 @@ arena_malloc(tsdn_t *tsdn, arena_t *arena, size_t size, szind_t ind, bool zero,
 
 JEMALLOC_ALWAYS_INLINE arena_t *
 arena_aalloc(tsdn_t *tsdn, const void *ptr) {
-	return extent_arena_get(iealloc(tsdn, ptr));
+	return (arena_t *)atomic_load_p(&arenas[extent_arena_ind_get(
+	    iealloc(tsdn, ptr))], ATOMIC_RELAXED);
 }
 
 JEMALLOC_ALWAYS_INLINE size_t
@@ -229,6 +234,16 @@ arena_vsalloc(tsdn_t *tsdn, const void *ptr) {
 }
 
 static inline void
+arena_dalloc_large_no_tcache(tsdn_t *tsdn, void *ptr, szind_t szind) {
+	if (config_prof && unlikely(szind < SC_NBINS)) {
+		arena_dalloc_promoted(tsdn, ptr, NULL, true);
+	} else {
+		extent_t *extent = iealloc(tsdn, ptr);
+		large_dalloc(tsdn, extent);
+	}
+}
+
+static inline void
 arena_dalloc_no_tcache(tsdn_t *tsdn, void *ptr) {
 	assert(ptr != NULL);
 
@@ -251,6 +266,21 @@ arena_dalloc_no_tcache(tsdn_t *tsdn, void *ptr) {
 	if (likely(slab)) {
 		/* Small allocation. */
 		arena_dalloc_small(tsdn, ptr);
+	} else {
+		arena_dalloc_large_no_tcache(tsdn, ptr, szind);
+	}
+}
+
+JEMALLOC_ALWAYS_INLINE void
+arena_dalloc_large(tsdn_t *tsdn, void *ptr, tcache_t *tcache, szind_t szind,
+    bool slow_path) {
+	if (szind < nhbins) {
+		if (config_prof && unlikely(szind < SC_NBINS)) {
+			arena_dalloc_promoted(tsdn, ptr, tcache, slow_path);
+		} else {
+			tcache_dalloc_large(tsdn_tsd(tsdn), tcache, ptr, szind,
+			    slow_path);
+		}
 	} else {
 		extent_t *extent = iealloc(tsdn, ptr);
 		large_dalloc(tsdn, extent);
@@ -295,18 +325,7 @@ arena_dalloc(tsdn_t *tsdn, void *ptr, tcache_t *tcache,
 		tcache_dalloc_small(tsdn_tsd(tsdn), tcache, ptr, szind,
 		    slow_path);
 	} else {
-		if (szind < nhbins) {
-			if (config_prof && unlikely(szind < SC_NBINS)) {
-				arena_dalloc_promoted(tsdn, ptr, tcache,
-				    slow_path);
-			} else {
-				tcache_dalloc_large(tsdn_tsd(tsdn), tcache, ptr,
-				    szind, slow_path);
-			}
-		} else {
-			extent_t *extent = iealloc(tsdn, ptr);
-			large_dalloc(tsdn, extent);
-		}
+		arena_dalloc_large(tsdn, ptr, tcache, szind, slow_path);
 	}
 }
 
@@ -349,8 +368,7 @@ arena_sdalloc_no_tcache(tsdn_t *tsdn, void *ptr, size_t size) {
 		/* Small allocation. */
 		arena_dalloc_small(tsdn, ptr);
 	} else {
-		extent_t *extent = iealloc(tsdn, ptr);
-		large_dalloc(tsdn, extent);
+		arena_dalloc_large_no_tcache(tsdn, ptr, szind);
 	}
 }
 
@@ -407,18 +425,7 @@ arena_sdalloc(tsdn_t *tsdn, void *ptr, size_t size, tcache_t *tcache,
 		tcache_dalloc_small(tsdn_tsd(tsdn), tcache, ptr, szind,
 		    slow_path);
 	} else {
-		if (szind < nhbins) {
-			if (config_prof && unlikely(szind < SC_NBINS)) {
-				arena_dalloc_promoted(tsdn, ptr, tcache,
-				    slow_path);
-			} else {
-				tcache_dalloc_large(tsdn_tsd(tsdn),
-				    tcache, ptr, szind, slow_path);
-			}
-		} else {
-			extent_t *extent = iealloc(tsdn, ptr);
-			large_dalloc(tsdn, extent);
-		}
+		arena_dalloc_large(tsdn, ptr, tcache, szind, slow_path);
 	}
 }
 

@@ -42,8 +42,8 @@ void listTypePush(robj *subject, robj *value, int where) {
     if (subject->encoding == OBJ_ENCODING_QUICKLIST) {
         int pos = (where == LIST_HEAD) ? QUICKLIST_HEAD : QUICKLIST_TAIL;
         value = getDecodedObject(value);
-        size_t len = sdslen(value->ptr);
-        quicklistPush(subject->ptr, value->ptr, len, pos);
+        size_t len = sdslen((const sds)value->ptr);
+        quicklistPush((quicklist*)subject->ptr, value->ptr, len, pos);
         decrRefCount(value);
     } else {
         serverPanic("Unknown list encoding");
@@ -60,7 +60,7 @@ robj *listTypePop(robj *subject, int where) {
 
     int ql_where = where == LIST_HEAD ? QUICKLIST_HEAD : QUICKLIST_TAIL;
     if (subject->encoding == OBJ_ENCODING_QUICKLIST) {
-        if (quicklistPopCustom(subject->ptr, ql_where, (unsigned char **)&value,
+        if (quicklistPopCustom((quicklist*)subject->ptr, ql_where, (unsigned char **)&value,
                                NULL, &vlong, listPopSaver)) {
             if (!value)
                 value = createStringObjectFromLongLong(vlong);
@@ -73,7 +73,7 @@ robj *listTypePop(robj *subject, int where) {
 
 unsigned long listTypeLength(const robj *subject) {
     if (subject->encoding == OBJ_ENCODING_QUICKLIST) {
-        return quicklistCount(subject->ptr);
+        return quicklistCount((const quicklist*)subject->ptr);
     } else {
         serverPanic("Unknown list encoding");
     }
@@ -82,7 +82,7 @@ unsigned long listTypeLength(const robj *subject) {
 /* Initialize an iterator at the specified index. */
 listTypeIterator *listTypeInitIterator(robj *subject, long index,
                                        unsigned char direction) {
-    listTypeIterator *li = zmalloc(sizeof(listTypeIterator));
+    listTypeIterator *li = (listTypeIterator*)zmalloc(sizeof(listTypeIterator));
     li->subject = subject;
     li->encoding = subject->encoding;
     li->direction = direction;
@@ -92,7 +92,7 @@ listTypeIterator *listTypeInitIterator(robj *subject, long index,
     int iter_direction =
         direction == LIST_HEAD ? AL_START_TAIL : AL_START_HEAD;
     if (li->encoding == OBJ_ENCODING_QUICKLIST) {
-        li->iter = quicklistGetIteratorAtIdx(li->subject->ptr,
+        li->iter = quicklistGetIteratorAtIdx((quicklist *)li->subject->ptr,
                                              iter_direction, index);
     } else {
         serverPanic("Unknown list encoding");
@@ -141,7 +141,7 @@ robj *listTypeGet(listTypeEntry *entry) {
 void listTypeInsert(listTypeEntry *entry, robj *value, int where) {
     if (entry->li->encoding == OBJ_ENCODING_QUICKLIST) {
         value = getDecodedObject(value);
-        sds str = value->ptr;
+        sds str = (sds)value->ptr;
         size_t len = sdslen(str);
         if (where == LIST_TAIL) {
             quicklistInsertAfter((quicklist *)entry->entry.quicklist,
@@ -160,7 +160,7 @@ void listTypeInsert(listTypeEntry *entry, robj *value, int where) {
 int listTypeEqual(listTypeEntry *entry, robj *o) {
     if (entry->li->encoding == OBJ_ENCODING_QUICKLIST) {
         serverAssertWithInfo(NULL,o,sdsEncodedObject(o));
-        return quicklistCompare(entry->entry.zi,o->ptr,sdslen(o->ptr));
+        return quicklistCompare(entry->entry.zi,(unsigned char*)o->ptr,sdslen((const sds)o->ptr));
     } else {
         serverPanic("Unknown list encoding");
     }
@@ -183,7 +183,7 @@ void listTypeConvert(robj *subject, int enc) {
     if (enc == OBJ_ENCODING_QUICKLIST) {
         size_t zlen = server.list_max_ziplist_size;
         int depth = server.list_compress_depth;
-        subject->ptr = quicklistCreateFromZiplist(zlen, depth, subject->ptr);
+        subject->ptr = quicklistCreateFromZiplist(zlen, depth, (unsigned char*)subject->ptr);
         subject->encoding = OBJ_ENCODING_QUICKLIST;
     } else {
         serverPanic("Unsupported list conversion");
@@ -206,7 +206,7 @@ void pushGenericCommand(client *c, int where) {
     for (j = 2; j < c->argc; j++) {
         if (!lobj) {
             lobj = createQuicklistObject();
-            quicklistSetOptions(lobj->ptr, server.list_max_ziplist_size,
+            quicklistSetOptions((quicklist*)lobj->ptr, server.list_max_ziplist_size,
                                 server.list_compress_depth);
             dbAdd(c->db,c->argv[1],lobj);
         }
@@ -268,9 +268,9 @@ void linsertCommand(client *c) {
     listTypeEntry entry;
     int inserted = 0;
 
-    if (strcasecmp(c->argv[2]->ptr,"after") == 0) {
+    if (strcasecmp((const char*)c->argv[2]->ptr,"after") == 0) {
         where = LIST_TAIL;
-    } else if (strcasecmp(c->argv[2]->ptr,"before") == 0) {
+    } else if (strcasecmp((const char*)c->argv[2]->ptr,"before") == 0) {
         where = LIST_HEAD;
     } else {
         addReply(c,shared.syntaxerr);
@@ -322,7 +322,7 @@ void lindexCommand(client *c) {
 
     if (o->encoding == OBJ_ENCODING_QUICKLIST) {
         quicklistEntry entry;
-        if (quicklistIndex(o->ptr, index, &entry)) {
+        if (quicklistIndex((const quicklist*)o->ptr, index, &entry)) {
             if (entry.value) {
                 value = createStringObject((char*)entry.value,entry.sz);
             } else {
@@ -348,9 +348,9 @@ void lsetCommand(client *c) {
         return;
 
     if (o->encoding == OBJ_ENCODING_QUICKLIST) {
-        quicklist *ql = o->ptr;
+        quicklist *ql = (quicklist*)o->ptr;
         int replaced = quicklistReplaceAtIndex(ql, index,
-                                               value->ptr, sdslen(value->ptr));
+                                               value->ptr, sdslen((const sds)value->ptr));
         if (!replaced) {
             addReply(c,shared.outofrangeerr);
         } else {
@@ -471,8 +471,8 @@ void ltrimCommand(client *c) {
 
     /* Remove list elements to perform the trim */
     if (o->encoding == OBJ_ENCODING_QUICKLIST) {
-        quicklistDelRange(o->ptr,0,ltrim);
-        quicklistDelRange(o->ptr,-rtrim,rtrim);
+        quicklistDelRange((quicklist*)o->ptr,0,ltrim);
+        quicklistDelRange((quicklist*)o->ptr,-rtrim,rtrim);
     } else {
         serverPanic("Unknown list encoding");
     }
@@ -551,7 +551,7 @@ void rpoplpushHandlePush(client *c, robj *dstkey, robj *dstobj, robj *value) {
     /* Create the list if the key does not exist */
     if (!dstobj) {
         dstobj = createQuicklistObject();
-        quicklistSetOptions(dstobj->ptr, server.list_max_ziplist_size,
+        quicklistSetOptions((quicklist*)dstobj->ptr, server.list_max_ziplist_size,
                             server.list_compress_depth);
         dbAdd(c->db,dstkey,dstobj);
     }

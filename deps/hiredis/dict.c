@@ -71,7 +71,7 @@ static void _dictReset(dict *ht) {
 
 /* Create a new hash table */
 static dict *dictCreate(dictType *type, void *privDataPtr) {
-    dict *ht = malloc(sizeof(*ht));
+    dict *ht = (dict *)malloc(sizeof(*ht));
     _dictInit(ht,type,privDataPtr);
     return ht;
 }
@@ -97,7 +97,7 @@ static int dictExpand(dict *ht, unsigned long size) {
     _dictInit(&n, ht->type, ht->privdata);
     n.size = realsize;
     n.sizemask = realsize-1;
-    n.table = calloc(realsize,sizeof(dictEntry*));
+    n.table = (dictEntry**)calloc(realsize,sizeof(dictEntry*));
 
     /* Copy all the elements from the old to the new table:
      * note that if the old hash table is empty ht->size is zero,
@@ -142,7 +142,7 @@ static int dictAdd(dict *ht, void *key, void *val) {
         return DICT_ERR;
 
     /* Allocates the memory and stores key */
-    entry = malloc(sizeof(*entry));
+    entry = (dictEntry*)malloc(sizeof(*entry));
     entry->next = ht->table[index];
     ht->table[index] = entry;
 
@@ -256,7 +256,7 @@ static dictEntry *dictFind(dict *ht, const void *key) {
 }
 
 static dictIterator *dictGetIterator(dict *ht) {
-    dictIterator *iter = malloc(sizeof(*iter));
+    dictIterator *iter = (dictIterator *)malloc(sizeof(*iter));
 
     iter->ht = ht;
     iter->index = -1;

@@ -18,6 +18,8 @@
 #include <math.h>
 #endif
 
+#include "win32fixes.h"
+
 static _locale_t clocale = NULL;
 double wstrtod(const char *nptr, char **eptr) {
     double d;

@@ -157,7 +157,7 @@ static void freeAllClients(void) {
 
     while(ln) {
         next = ln->next;
-        freeClient(ln->value);
+        freeClient((client)ln->value);
         ln = next;
     }
 }
@@ -203,7 +203,7 @@ static void clientDone(client c) {
 }
 
 static void readHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-    client c = privdata;
+    client c = (client)privdata;
     void *reply = NULL;
     UNUSED(el);
     UNUSED(fd);
@@ -232,7 +232,7 @@ static void readHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
                 if (config.showerrors) {
                     static time_t lasterr_time = 0;
                     time_t now = time(NULL);
-                    redisReply *r = reply;
+                    redisReply *r = (redisReply*)reply;
                     if (r->type == REDIS_REPLY_ERROR && lasterr_time != now) {
                         lasterr_time = now;
                         printf("Error from server: %s\n", r->str);
@@ -272,7 +272,7 @@ static void readHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
 }
 
 static void writeHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-    client c = privdata;
+    client c = (client)privdata;
     UNUSED(el);
     UNUSED(fd);
     UNUSED(mask);
@@ -331,7 +331,7 @@ static void writeHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
  * Even when cloning another client, prefix commands are applied if needed.*/
 static client createClient(char *cmd, size_t len, client from) {
     int j;
-    client c = zmalloc(sizeof(struct _client));
+    client c = (client)zmalloc(sizeof(struct _client));
 
     if (config.hostsocket == NULL) {
         c->context = redisConnectNonBlock(config.hostip,config.hostport);
@@ -395,7 +395,7 @@ static client createClient(char *cmd, size_t len, client from) {
         if (from) {
             c->randlen = from->randlen;
             c->randfree = 0;
-            c->randptr = zmalloc(sizeof(char*)*c->randlen);
+            c->randptr = (char**)zmalloc(sizeof(char*)*c->randlen);
             /* copy the offsets. */
             for (j = 0; j < (int)c->randlen; j++) {
                 c->randptr[j] = c->obuf + (from->randptr[j]-from->obuf);
@@ -407,10 +407,10 @@ static client createClient(char *cmd, size_t len, client from) {
 
             c->randlen = 0;
             c->randfree = RANDPTR_INITIAL_SIZE;
-            c->randptr = zmalloc(sizeof(char*)*c->randfree);
+            c->randptr = (char**)zmalloc(sizeof(char*)*c->randfree);
             while ((p = strstr(p,"__rand_int__")) != NULL) {
                 if (c->randfree == 0) {
-                    c->randptr = zrealloc(c->randptr,sizeof(char*)*c->randlen*2);
+                    c->randptr = (char**)zrealloc(c->randptr,sizeof(char*)*c->randlen*2);
                     c->randfree += c->randlen;
                 }
                 c->randptr[c->randlen++] = p;
@@ -700,7 +700,7 @@ int main(int argc, const char **argv) {
     argc -= i;
     argv += i;
 
-    config.latency = zmalloc(sizeof(long long)*config.requests);
+    config.latency = (__int64*)zmalloc(sizeof(long long)*config.requests);
 
     if (config.keepalive == 0) {
         printf("WARNING: keepalive disabled, you probably need 'echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse' for Linux and 'sudo sysctl -w net.inet.tcp.msl=1000' for Mac OS X in order to use a lot of clients/requests\n");
@@ -732,7 +732,7 @@ int main(int argc, const char **argv) {
     }
 
     /* Run default benchmark suite. */
-    data = zmalloc(config.datasize+1);
+    data = (char *)zmalloc(config.datasize+1);
     do {
         memset(data,'x',config.datasize);
         data[config.datasize] = '\0';

@@ -57,12 +57,6 @@
 #define va_copy(d,s)  d = (s)
 #endif
 
-#ifndef __RTL_GENRANDOM
-#define __RTL_GENRANDOM 1
-typedef BOOLEAN(_stdcall* RtlGenRandomFunc)(void * RandomBuffer, ULONG RandomBufferLength);
-#endif
-RtlGenRandomFunc RtlGenRandom;
-
 #define random()    replace_random()
 #define rand()      replace_random()
 #define srandom     srand

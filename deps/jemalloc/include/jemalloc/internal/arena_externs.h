@@ -49,7 +49,7 @@ void arena_decay(tsdn_t *tsdn, arena_t *arena, bool is_background_thread,
 void arena_reset(tsd_t *tsd, arena_t *arena);
 void arena_destroy(tsd_t *tsd, arena_t *arena);
 void arena_tcache_fill_small(tsdn_t *tsdn, arena_t *arena, tcache_t *tcache,
-    cache_bin_t *tbin, szind_t binind, uint64_t prof_accumbytes);
+    cache_bin_t *tbin, szind_t binind);
 void arena_alloc_junk_small(void *ptr, const bin_info_t *bin_info,
     bool zero);
 
@@ -60,7 +60,7 @@ void *arena_malloc_hard(tsdn_t *tsdn, arena_t *arena, size_t size,
     szind_t ind, bool zero);
 void *arena_palloc(tsdn_t *tsdn, arena_t *arena, size_t usize,
     size_t alignment, bool zero, tcache_t *tcache);
-void arena_prof_promote(tsdn_t *tsdn, const void *ptr, size_t usize);
+void arena_prof_promote(tsdn_t *tsdn, void *ptr, size_t usize);
 void arena_dalloc_promoted(tsdn_t *tsdn, void *ptr, tcache_t *tcache,
     bool slow_path);
 void arena_dalloc_bin_junked_locked(tsdn_t *tsdn, arena_t *arena, bin_t *bin,

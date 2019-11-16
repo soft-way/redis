@@ -100,7 +100,7 @@ void setCommand(client *c) {
     int flags = OBJ_SET_NO_FLAGS;
 
     for (j = 3; j < c->argc; j++) {
-        char *a = c->argv[j]->ptr;
+        char *a = (char *)c->argv[j]->ptr;
         robj *next = (j == c->argc-1) ? NULL : c->argv[j+1];
 
         if ((a[0] == 'n' || a[0] == 'N') &&
@@ -184,7 +184,7 @@ void getsetCommand(client *c) {
 void setrangeCommand(client *c) {
     robj *o;
     long offset;
-    sds value = c->argv[3]->ptr;
+    sds value = (sds)c->argv[3]->ptr;
 
     if (getLongFromObjectOrReply(c,c->argv[2],&offset,NULL) != C_OK)
         return;
@@ -231,14 +231,14 @@ void setrangeCommand(client *c) {
     }
 
     if (sdslen(value) > 0) {
-        o->ptr = sdsgrowzero(o->ptr,offset+sdslen(value));
+        o->ptr = sdsgrowzero((sds)o->ptr,offset+sdslen(value));
         memcpy((char*)o->ptr+offset,value,sdslen(value));
         signalModifiedKey(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_STRING,
             "setrange",c->argv[1],c->db->id);
         server.dirty++;
     }
-    addReplyLongLong(c,sdslen(o->ptr));
+    addReplyLongLong(c,sdslen((const sds)o->ptr));
 }
 
 void getrangeCommand(client *c) {
@@ -258,7 +258,7 @@ void getrangeCommand(client *c) {
         str = llbuf;
         strlen = ll2string(llbuf,sizeof(llbuf),(long)o->ptr);
     } else {
-        str = o->ptr;
+        str = (char*)o->ptr;
         strlen = sdslen(str);
     }
 
@@ -338,7 +338,7 @@ void msetnxCommand(client *c) {
 
 void incrDecrCommand(client *c, long long incr) {
     long long value, oldvalue;
-    robj *o, *new;
+    robj *o, *_new;
 
     o = lookupKeyWrite(c->db,c->argv[1]);
     if (o != NULL && checkType(c,o,OBJ_STRING)) return;
@@ -356,21 +356,21 @@ void incrDecrCommand(client *c, long long incr) {
         (value < 0 || value >= OBJ_SHARED_INTEGERS) &&
         value >= LONG_MIN && value <= LONG_MAX)
     {
-        new = o;
+        _new = o;
         o->ptr = (void*)((long)value);
     } else {
-        new = createStringObjectFromLongLongForValue(value);
+        _new = createStringObjectFromLongLongForValue(value);
         if (o) {
-            dbOverwrite(c->db,c->argv[1],new);
+            dbOverwrite(c->db,c->argv[1], _new);
         } else {
-            dbAdd(c->db,c->argv[1],new);
+            dbAdd(c->db,c->argv[1], _new);
         }
     }
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_STRING,"incrby",c->argv[1],c->db->id);
     server.dirty++;
     addReply(c,shared.colon);
-    addReply(c,new);
+    addReply(c, _new);
     addReply(c,shared.crlf);
 }
 
@@ -398,7 +398,7 @@ void decrbyCommand(client *c) {
 
 void incrbyfloatCommand(client *c) {
     long double incr, value;
-    robj *o, *new, *aux;
+    robj *o, *_new, *aux;
 
     o = lookupKeyWrite(c->db,c->argv[1]);
     if (o != NULL && checkType(c,o,OBJ_STRING)) return;
@@ -411,15 +411,15 @@ void incrbyfloatCommand(client *c) {
         addReplyError(c,"increment would produce NaN or Infinity");
         return;
     }
-    new = createStringObjectFromLongDouble(value,1);
+    _new = createStringObjectFromLongDouble(value,1);
     if (o)
-        dbOverwrite(c->db,c->argv[1],new);
+        dbOverwrite(c->db,c->argv[1], _new);
     else
-        dbAdd(c->db,c->argv[1],new);
+        dbAdd(c->db,c->argv[1], _new);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_STRING,"incrbyfloat",c->argv[1],c->db->id);
     server.dirty++;
-    addReplyBulk(c,new);
+    addReplyBulk(c, _new);
 
     /* Always replicate INCRBYFLOAT as a SET command with the final value
      * in order to make sure that differences in float precision or formatting
@@ -427,7 +427,7 @@ void incrbyfloatCommand(client *c) {
     aux = createStringObject("SET",3);
     rewriteClientCommandArgument(c,0,aux);
     decrRefCount(aux);
-    rewriteClientCommandArgument(c,2,new);
+    rewriteClientCommandArgument(c,2, _new);
 }
 
 void appendCommand(client *c) {
@@ -448,14 +448,14 @@ void appendCommand(client *c) {
 
         /* "append" is an argument, so always an sds */
         append = c->argv[2];
-        totlen = stringObjectLen(o)+sdslen(append->ptr);
+        totlen = stringObjectLen(o)+sdslen((const sds)append->ptr);
         if (checkStringLength(c,totlen) != C_OK)
             return;
 
         /* Append the value */
         o = dbUnshareStringValue(c->db,c->argv[1],o);
-        o->ptr = sdscatlen(o->ptr,append->ptr,sdslen(append->ptr));
-        totlen = sdslen(o->ptr);
+        o->ptr = sdscatlen((sds)o->ptr,append->ptr,sdslen((const sds)append->ptr));
+        totlen = sdslen((const sds)o->ptr);
     }
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(NOTIFY_STRING,"append",c->argv[1],c->db->id);

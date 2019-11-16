@@ -56,9 +56,6 @@ large_palloc(tsdn_t *tsdn, arena_t *arena, size_t usize, size_t alignment,
 		extent_list_append(&arena->large, extent);
 		malloc_mutex_unlock(tsdn, &arena->large_mtx);
 	}
-	if (config_prof && arena_prof_accum(tsdn, arena, usize)) {
-		prof_idump(tsdn);
-	}
 
 	if (zero) {
 		assert(is_zeroed);
@@ -94,7 +91,7 @@ large_dalloc_maybe_junk_t *JET_MUTABLE large_dalloc_maybe_junk =
 
 static bool
 large_ralloc_no_move_shrink(tsdn_t *tsdn, extent_t *extent, size_t usize) {
-	arena_t *arena = extent_arena_get(extent);
+	arena_t *arena = arena_get_from_extent(extent);
 	size_t oldusize = extent_usize_get(extent);
 	extent_hooks_t *extent_hooks = extent_hooks_get(arena);
 	size_t diff = extent_size_get(extent) - (usize + sz_large_pad);
@@ -130,7 +127,7 @@ large_ralloc_no_move_shrink(tsdn_t *tsdn, extent_t *extent, size_t usize) {
 static bool
 large_ralloc_no_move_expand(tsdn_t *tsdn, extent_t *extent, size_t usize,
     bool zero) {
-	arena_t *arena = extent_arena_get(extent);
+	arena_t *arena = arena_get_from_extent(extent);
 	size_t oldusize = extent_usize_get(extent);
 	extent_hooks_t *extent_hooks = extent_hooks_get(arena);
 	size_t trailsize = usize - oldusize;
@@ -153,10 +150,10 @@ large_ralloc_no_move_expand(tsdn_t *tsdn, extent_t *extent, size_t usize,
 	extent_t *trail;
 	bool new_mapping;
 	if ((trail = extents_alloc(tsdn, arena, &extent_hooks,
-	    &arena->extents_dirty, extent_past_get(extent), trailsize, 0,
+	    &arena->eset_dirty, extent_past_get(extent), trailsize, 0,
 	    CACHELINE, false, SC_NSIZES, &is_zeroed_trail, &commit)) != NULL
 	    || (trail = extents_alloc(tsdn, arena, &extent_hooks,
-	    &arena->extents_muzzy, extent_past_get(extent), trailsize, 0,
+	    &arena->eset_muzzy, extent_past_get(extent), trailsize, 0,
 	    CACHELINE, false, SC_NSIZES, &is_zeroed_trail, &commit)) != NULL) {
 		if (config_stats) {
 			new_mapping = false;
@@ -230,14 +227,14 @@ large_ralloc_no_move(tsdn_t *tsdn, extent_t *extent, size_t usize_min,
 		/* Attempt to expand the allocation in-place. */
 		if (!large_ralloc_no_move_expand(tsdn, extent, usize_max,
 		    zero)) {
-			arena_decay_tick(tsdn, extent_arena_get(extent));
+			arena_decay_tick(tsdn, arena_get_from_extent(extent));
 			return false;
 		}
 		/* Try again, this time with usize_min. */
 		if (usize_min < usize_max && usize_min > oldusize &&
 		    large_ralloc_no_move_expand(tsdn, extent, usize_min,
 		    zero)) {
-			arena_decay_tick(tsdn, extent_arena_get(extent));
+			arena_decay_tick(tsdn, arena_get_from_extent(extent));
 			return false;
 		}
 	}
@@ -247,14 +244,14 @@ large_ralloc_no_move(tsdn_t *tsdn, extent_t *extent, size_t usize_min,
 	 * the new size.
 	 */
 	if (oldusize >= usize_min && oldusize <= usize_max) {
-		arena_decay_tick(tsdn, extent_arena_get(extent));
+		arena_decay_tick(tsdn, arena_get_from_extent(extent));
 		return false;
 	}
 
 	/* Attempt to shrink the allocation in-place. */
 	if (oldusize > usize_max) {
 		if (!large_ralloc_no_move_shrink(tsdn, extent, usize_max)) {
-			arena_decay_tick(tsdn, extent_arena_get(extent));
+			arena_decay_tick(tsdn, arena_get_from_extent(extent));
 			return false;
 		}
 	}
@@ -348,17 +345,18 @@ large_dalloc_finish_impl(tsdn_t *tsdn, arena_t *arena, extent_t *extent) {
 
 void
 large_dalloc_prep_junked_locked(tsdn_t *tsdn, extent_t *extent) {
-	large_dalloc_prep_impl(tsdn, extent_arena_get(extent), extent, true);
+	large_dalloc_prep_impl(tsdn, arena_get_from_extent(extent), extent,
+	    true);
 }
 
 void
 large_dalloc_finish(tsdn_t *tsdn, extent_t *extent) {
-	large_dalloc_finish_impl(tsdn, extent_arena_get(extent), extent);
+	large_dalloc_finish_impl(tsdn, arena_get_from_extent(extent), extent);
 }
 
 void
 large_dalloc(tsdn_t *tsdn, extent_t *extent) {
-	arena_t *arena = extent_arena_get(extent);
+	arena_t *arena = arena_get_from_extent(extent);
 	large_dalloc_prep_impl(tsdn, arena, extent, false);
 	large_dalloc_finish_impl(tsdn, arena, extent);
 	arena_decay_tick(tsdn, arena);

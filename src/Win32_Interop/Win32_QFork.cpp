@@ -95,7 +95,8 @@ allocate a system paging file that will expand up to about (3.5 * physical).
 #include <Psapi.h>
 #include <iostream>
 
-#define QFORK_MAIN_IMPL
+//#define QFORK_MAIN_IMPL
+#include "..\server.h"
 #include "Win32_QFork.h"
 #include "Win32_QFork_impl.h"
 #include "Win32_SmartHandle.h"
@@ -105,6 +106,7 @@ allocate a system paging file that will expand up to about (3.5 * physical).
 #include "Win32_StackTrace.h"
 #include "Win32_ThreadControl.h"
 #include "Win32_EventLog.h"
+#include "Win32_Time.h"
 
 #ifdef USE_DLMALLOC
   #include "Win32_dlmalloc.h"
@@ -161,10 +163,8 @@ struct QForkInfo {
     LPVOID protocolInfo;
 };
 
-extern "C"
-{
     int checkForSentinelMode(int argc, char **argv);
-    void InitTimeFunctions();
+//    void InitTimeFunctions();
     PORT_LONGLONG memtoll(const char *p, int *err);     // Forward def from util.h
 
 #ifdef USE_DLMALLOC
@@ -174,7 +174,6 @@ extern "C"
     void(*g_free)(void*) = nullptr;
     size_t(*g_msize)(void*) = nullptr;
 #endif
-}
 
 #ifdef USE_DLMALLOC
   const size_t cAllocationGranularity = 1 << 18;    // 256KB per heap block (matches large block allocation threshold of dlmalloc)
@@ -220,6 +219,8 @@ struct QForkControl {
     size_t DLMallocGlobalStateSize;
 #endif
 };
+
+BOOL g_IsForkedProcess;
 
 QForkControl* g_pQForkControl;
 HANDLE g_hQForkControlFileMap;
@@ -334,7 +335,7 @@ BOOL QForkChildInit(HANDLE QForkControlMemoryMapHandle, DWORD ParentProcessID) {
 
         // Execute requested operation
         if (g_pQForkControl->typeOfOperation == OperationType::otRDB) {
-            g_ChildExitCode = do_rdbSave(g_pQForkControl->globalData.filename);
+            g_ChildExitCode = do_rdbSave(g_pQForkControl->globalData.filename, NULL);
         } else if (g_pQForkControl->typeOfOperation == OperationType::otAOF) {
             int aof_pipe_read_ack = FDAPI_open_osfhandle((intptr_t) g_pQForkControl->globalData.aof_pipe_read_ack_handle, _O_APPEND);
             int aof_pipe_read_data = FDAPI_open_osfhandle((intptr_t) g_pQForkControl->globalData.aof_pipe_read_data_handle, _O_APPEND);

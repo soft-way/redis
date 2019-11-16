@@ -61,7 +61,11 @@
 #include <sys/param.h>
 #endif
 
+#include "rdb.h"
+
 #define rdbExitReportCorruptRDB(...) rdbCheckThenExit(__LINE__,__VA_ARGS__)
+
+extern const char* SDS_NOINIT;
 
 extern int rdbCheckMode;
 void rdbCheckError(const char *fmt, ...);
@@ -303,7 +307,7 @@ void *rdbLoadIntegerObject(rio *rdb, int enctype, int flags, size_t *lenptr) {
         char buf[LONG_STR_SIZE], *p;
         int len = ll2string(buf,sizeof(buf),val);
         if (lenptr) *lenptr = len;
-        p = plain ? zmalloc(len) : sdsnewlen(SDS_NOINIT,len);
+        p = (char*)(plain ? zmalloc(len) : sdsnewlen(SDS_NOINIT,len));
         memcpy(p,buf,len);
         return p;
     } else if (encode) {
@@ -387,11 +391,11 @@ void *rdbLoadLzfStringObject(rio *rdb, int flags, size_t *lenptr) {
 
     if ((clen = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
     if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
-    if ((c = zmalloc(clen)) == NULL) goto err;
+    if ((c = (unsigned char*)zmalloc(clen)) == NULL) goto err;
 
     /* Allocate our target according to the uncompressed size. */
     if (plain) {
-        val = zmalloc(len);
+        val = (char*)zmalloc(len);
     } else {
         val = sdsnewlen(SDS_NOINIT,len);
     }
@@ -480,7 +484,7 @@ ssize_t rdbSaveStringObject(rio *rdb, robj *obj) {
         return rdbSaveLongLongAsStringObject(rdb,(long)obj->ptr);
     } else {
         serverAssertWithInfo(NULL,obj,sdsEncodedObject(obj));
-        return rdbSaveRawString(rdb,obj->ptr,sdslen(obj->ptr));
+        return rdbSaveRawString(rdb, (unsigned char*)obj->ptr,sdslen((const sds)obj->ptr));
     }
 }
 
@@ -500,7 +504,7 @@ ssize_t rdbSaveStringObject(rio *rdb, robj *obj) {
 void *rdbGenericLoadStringObject(rio *rdb, int flags, size_t *lenptr) {
     int encode = flags & RDB_LOAD_ENC;
     int plain = flags & RDB_LOAD_PLAIN;
-    int sds = flags & RDB_LOAD_SDS;
+    int _sds = flags & RDB_LOAD_SDS;
     int isencoded;
     uint64_t len;
 
@@ -519,14 +523,14 @@ void *rdbGenericLoadStringObject(rio *rdb, int flags, size_t *lenptr) {
     }
 
     if (len == RDB_LENERR) return NULL;
-    if (plain || sds) {
+    if (plain || _sds) {
         void *buf = plain ? zmalloc(len) : sdsnewlen(SDS_NOINIT,len);
         if (lenptr) *lenptr = len;
         if (len && rioRead(rdb,buf,len) == 0) {
             if (plain)
                 zfree(buf);
             else
-                sdsfree(buf);
+                sdsfree((sds)buf);
             return NULL;
         }
         return buf;
@@ -542,11 +546,11 @@ void *rdbGenericLoadStringObject(rio *rdb, int flags, size_t *lenptr) {
 }
 
 robj *rdbLoadStringObject(rio *rdb) {
-    return rdbGenericLoadStringObject(rdb,RDB_LOAD_NONE,NULL);
+    return (robj*)rdbGenericLoadStringObject(rdb,RDB_LOAD_NONE,NULL);
 }
 
 robj *rdbLoadEncodedStringObject(rio *rdb) {
-    return rdbGenericLoadStringObject(rdb,RDB_LOAD_ENC,NULL);
+    return (robj*)rdbGenericLoadStringObject(rdb,RDB_LOAD_ENC,NULL);
 }
 
 /* Save a double value. Doubles are saved as strings prefixed by an unsigned
@@ -715,7 +719,7 @@ ssize_t rdbSaveStreamPEL(rio *rdb, rax *pel, int nacks) {
         nwritten += n;
 
         if (nacks) {
-            streamNACK *nack = ri.data;
+            streamNACK *nack = (streamNACK*)ri.data;
             if ((n = rdbSaveMillisecondTime(rdb,nack->delivery_time)) == -1)
                 return -1;
             nwritten += n;
@@ -745,7 +749,7 @@ size_t rdbSaveStreamConsumers(rio *rdb, streamCG *cg) {
     raxStart(&ri,cg->consumers);
     raxSeek(&ri,"^",NULL,0);
     while(raxNext(&ri)) {
-        streamConsumer *consumer = ri.data;
+        streamConsumer *consumer = (streamConsumer*)ri.data;
 
         /* Consumer name. */
         if ((n = rdbSaveRawString(rdb,ri.key,ri.key_len)) == -1) return -1;
@@ -780,7 +784,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
     } else if (o->type == OBJ_LIST) {
         /* Save a list value */
         if (o->encoding == OBJ_ENCODING_QUICKLIST) {
-            quicklist *ql = o->ptr;
+            quicklist *ql = (quicklist*)o->ptr;
             quicklistNode *node = ql->head;
 
             if ((n = rdbSaveLen(rdb,ql->len)) == -1) return -1;
@@ -804,7 +808,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
     } else if (o->type == OBJ_SET) {
         /* Save a set value */
         if (o->encoding == OBJ_ENCODING_HT) {
-            dict *set = o->ptr;
+            dict *set = (dict*)o->ptr;
             dictIterator *di = dictGetIterator(set);
             dictEntry *de;
 
@@ -815,7 +819,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
             nwritten += n;
 
             while((de = dictNext(di)) != NULL) {
-                sds ele = dictGetKey(de);
+                sds ele = (sds)dictGetKey(de);
                 if ((n = rdbSaveRawString(rdb,(unsigned char*)ele,sdslen(ele)))
                     == -1)
                 {
@@ -828,7 +832,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
         } else if (o->encoding == OBJ_ENCODING_INTSET) {
             size_t l = intsetBlobLen((intset*)o->ptr);
 
-            if ((n = rdbSaveRawString(rdb,o->ptr,l)) == -1) return -1;
+            if ((n = rdbSaveRawString(rdb, (unsigned char*)o->ptr,l)) == -1) return -1;
             nwritten += n;
         } else {
             serverPanic("Unknown set encoding");
@@ -838,10 +842,10 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
         if (o->encoding == OBJ_ENCODING_ZIPLIST) {
             size_t l = ziplistBlobLen((unsigned char*)o->ptr);
 
-            if ((n = rdbSaveRawString(rdb,o->ptr,l)) == -1) return -1;
+            if ((n = rdbSaveRawString(rdb, (unsigned char*)o->ptr,l)) == -1) return -1;
             nwritten += n;
         } else if (o->encoding == OBJ_ENCODING_SKIPLIST) {
-            zset *zs = o->ptr;
+            zset *zs = (zset*)o->ptr;
             zskiplist *zsl = zs->zsl;
 
             if ((n = rdbSaveLen(rdb,zsl->length)) == -1) return -1;
@@ -874,11 +878,11 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
         if (o->encoding == OBJ_ENCODING_ZIPLIST) {
             size_t l = ziplistBlobLen((unsigned char*)o->ptr);
 
-            if ((n = rdbSaveRawString(rdb,o->ptr,l)) == -1) return -1;
+            if ((n = rdbSaveRawString(rdb, (unsigned char*)o->ptr,l)) == -1) return -1;
             nwritten += n;
 
         } else if (o->encoding == OBJ_ENCODING_HT) {
-            dictIterator *di = dictGetIterator(o->ptr);
+            dictIterator *di = dictGetIterator((dict *)o->ptr);
             dictEntry *de;
 
             if ((n = rdbSaveLen(rdb,dictSize((dict*)o->ptr))) == -1) {
@@ -888,8 +892,8 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
             nwritten += n;
 
             while((de = dictNext(di)) != NULL) {
-                sds field = dictGetKey(de);
-                sds value = dictGetVal(de);
+                sds field = (sds)dictGetKey(de);
+                sds value = (sds)dictGetVal(de);
 
                 if ((n = rdbSaveRawString(rdb,(unsigned char*)field,
                         sdslen(field))) == -1)
@@ -912,7 +916,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
         }
     } else if (o->type == OBJ_STREAM) {
         /* Store how many listpacks we have inside the radix tree. */
-        stream *s = o->ptr;
+        stream *s = (stream*)o->ptr;
         rax *rax = s->rax;
         if ((n = rdbSaveLen(rdb,raxSize(rax))) == -1) return -1;
         nwritten += n;
@@ -924,7 +928,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
         raxStart(&ri,rax);
         raxSeek(&ri,"^",NULL,0);
         while (raxNext(&ri)) {
-            unsigned char *lp = ri.data;
+            unsigned char *lp = (unsigned char*)ri.data;
             size_t lp_bytes = lpBytes(lp);
             if ((n = rdbSaveRawString(rdb,ri.key,ri.key_len)) == -1) return -1;
             nwritten += n;
@@ -957,7 +961,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
             raxStart(&ri,s->cgroups);
             raxSeek(&ri,"^",NULL,0);
             while(raxNext(&ri)) {
-                streamCG *cg = ri.data;
+                streamCG *cg = (streamCG*)ri.data;
 
                 /* Save the group name. */
                 if ((n = rdbSaveRawString(rdb,ri.key,ri.key_len)) == -1)
@@ -983,7 +987,7 @@ ssize_t rdbSaveObject(rio *rdb, robj *o) {
     } else if (o->type == OBJ_MODULE) {
         /* Save a module-specific value. */
         RedisModuleIO io;
-        moduleValue *mv = o->ptr;
+        moduleValue *mv = (moduleValue*)o->ptr;
         moduleType *mt = mv->type;
         moduleInitIOContext(io,mt,rdb);
 
@@ -1066,9 +1070,9 @@ ssize_t rdbSaveAuxField(rio *rdb, void *key, size_t keylen, void *val, size_t va
     ssize_t ret, len = 0;
     if ((ret = rdbSaveType(rdb,RDB_OPCODE_AUX)) == -1) return -1;
     len += ret;
-    if ((ret = rdbSaveRawString(rdb,key,keylen)) == -1) return -1;
+    if ((ret = rdbSaveRawString(rdb,(unsigned char*)key,keylen)) == -1) return -1;
     len += ret;
-    if ((ret = rdbSaveRawString(rdb,val,vallen)) == -1) return -1;
+    if ((ret = rdbSaveRawString(rdb, (unsigned char*)val,vallen)) == -1) return -1;
     len += ret;
     return len;
 }
@@ -1155,8 +1159,8 @@ int rdbSaveRio(rio *rdb, int *error, int flags, rdbSaveInfo *rsi) {
 
         /* Iterate this DB writing every entry */
         while((de = dictNext(di)) != NULL) {
-            sds keystr = dictGetKey(de);
-            robj key, *o = dictGetVal(de);
+            sds keystr = (sds)dictGetKey(de);
+            robj key, *o = (robj *)dictGetVal(de);
             long long expire;
 
             initStaticStringObject(key,keystr);
@@ -1184,8 +1188,8 @@ int rdbSaveRio(rio *rdb, int *error, int flags, rdbSaveInfo *rsi) {
     if (rsi && dictSize(server.lua_scripts)) {
         di = dictGetIterator(server.lua_scripts);
         while((de = dictNext(di)) != NULL) {
-            robj *body = dictGetVal(de);
-            if (rdbSaveAuxField(rdb,"lua",3,body->ptr,sdslen(body->ptr)) == -1)
+            robj *body = (robj*)dictGetVal(de);
+            if (rdbSaveAuxField(rdb,"lua",3,body->ptr,sdslen((const sds)body->ptr)) == -1)
                 goto werr;
         }
         dictReleaseIterator(di);
@@ -1311,10 +1315,14 @@ werr:
 }
 
 int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
+#ifdef _WIN32
+    HANDLE childpid;
+#else
     pid_t childpid;
+#endif
     long long start;
 
-    if (server.aof_child_pid != -1 || server.rdb_child_pid != -1) return C_ERR;
+    if (server.aof_child_pid != INVALID_HANDLE_VALUE || server.rdb_child_pid != INVALID_HANDLE_VALUE) return C_ERR;
 
     server.dirty_before_bgsave = server.dirty;
     server.lastbgsave_try = time(NULL);
@@ -1322,7 +1330,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
 
     start = ustime();
 #ifdef _WIN32
-    childpid = BeginForkOperation_Rdb(filename, &server, sizeof(server), dictGetHashFunctionSeed());
+    childpid = (HANDLE)BeginForkOperation_Rdb(filename, &server, sizeof(server), (uint32_t)dictGetHashFunctionSeed());
 #else
     if ((childpid = fork()) == 0) {
         int retval;
@@ -1350,7 +1358,7 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
         server.stat_fork_time = ustime()-start;
         server.stat_fork_rate = (double) zmalloc_used_memory() * 1000000 / server.stat_fork_time / (1024*1024*1024); /* GB per second. */
         latencyAddSampleIfNeeded("fork",server.stat_fork_time/1000);
-        if (childpid == -1) {
+        if (childpid == INVALID_HANDLE_VALUE) {
             closeChildInfoPipe();
             server.lastbgsave_status = C_ERR;
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
@@ -1370,7 +1378,11 @@ int rdbSaveBackground(char *filename, rdbSaveInfo *rsi) {
     return C_OK; /* unreached */
 }
 
+#ifdef _WIN32
+void rdbRemoveTempFile(HANDLE childpid) {
+#else
 void rdbRemoveTempFile(pid_t childpid) {
+#endif
     char tmpfile[256];
 
     snprintf(tmpfile,sizeof(tmpfile),"temp-%d.rdb", (int) childpid);
@@ -1393,7 +1405,7 @@ robj *rdbLoadCheckModuleValue(rio *rdb, char *modulename) {
                     "Error reading integer from module %s value", modulename);
             }
         } else if (opcode == RDB_MODULE_OPCODE_STRING) {
-            robj *o = rdbGenericLoadStringObject(rdb,RDB_LOAD_NONE,NULL);
+            robj *o = (robj*)rdbGenericLoadStringObject(rdb,RDB_LOAD_NONE,NULL);
             if (o == NULL) {
                 rdbExitReportCorruptRDB(
                     "Error reading string from module %s value", modulename);
@@ -1432,15 +1444,15 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
         if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
 
         o = createQuicklistObject();
-        quicklistSetOptions(o->ptr, server.list_max_ziplist_size,
+        quicklistSetOptions((quicklist*)o->ptr, server.list_max_ziplist_size,
                             server.list_compress_depth);
 
         /* Load every single element of the list */
         while(len--) {
             if ((ele = rdbLoadEncodedStringObject(rdb)) == NULL) return NULL;
             dec = getDecodedObject(ele);
-            size_t len = sdslen(dec->ptr);
-            quicklistPushTail(o->ptr, dec->ptr, len);
+            size_t len = sdslen((const sds)dec->ptr);
+            quicklistPushTail((quicklist *)o->ptr, dec->ptr, len);
             decrRefCount(dec);
             decrRefCount(ele);
         }
@@ -1454,7 +1466,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
             /* It's faster to expand the dict to the right size asap in order
              * to avoid rehashing */
             if (len > DICT_HT_INITIAL_SIZE)
-                dictExpand(o->ptr,len);
+                dictExpand((dict*)o->ptr,len);
         } else {
             o = createIntsetObject();
         }
@@ -1464,16 +1476,16 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
             long long llval;
             sds sdsele;
 
-            if ((sdsele = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
+            if ((sdsele = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
                 == NULL) return NULL;
 
             if (o->encoding == OBJ_ENCODING_INTSET) {
                 /* Fetch integer value from element. */
                 if (isSdsRepresentableAsLongLong(sdsele,&llval) == C_OK) {
-                    o->ptr = intsetAdd(o->ptr,llval,NULL);
+                    o->ptr = intsetAdd((intset*)o->ptr,llval,NULL);
                 } else {
                     setTypeConvert(o,OBJ_ENCODING_HT);
-                    dictExpand(o->ptr,len);
+                    dictExpand((dict*)o->ptr,len);
                 }
             }
 
@@ -1493,7 +1505,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
 
         if ((zsetlen = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
         o = createZsetObject();
-        zs = o->ptr;
+        zs = (zset *)o->ptr;
 
         if (zsetlen > DICT_HT_INITIAL_SIZE)
             dictExpand(zs->dict,zsetlen);
@@ -1504,7 +1516,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
             double score;
             zskiplistNode *znode;
 
-            if ((sdsele = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
+            if ((sdsele = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
                 == NULL) return NULL;
 
             if (rdbtype == RDB_TYPE_ZSET_2) {
@@ -1542,15 +1554,15 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
         while (o->encoding == OBJ_ENCODING_ZIPLIST && len > 0) {
             len--;
             /* Load raw strings */
-            if ((field = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
+            if ((field = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
                 == NULL) return NULL;
-            if ((value = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
+            if ((value = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
                 == NULL) return NULL;
 
             /* Add pair to ziplist */
-            o->ptr = ziplistPush(o->ptr, (unsigned char*)field,
+            o->ptr = ziplistPush((unsigned char*)o->ptr, (unsigned char*)field,
                     sdslen(field), ZIPLIST_TAIL);
-            o->ptr = ziplistPush(o->ptr, (unsigned char*)value,
+            o->ptr = ziplistPush((unsigned char*)o->ptr, (unsigned char*)value,
                     sdslen(value), ZIPLIST_TAIL);
 
             /* Convert to hash table if size threshold is exceeded */
@@ -1567,15 +1579,15 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
         }
 
         if (o->encoding == OBJ_ENCODING_HT && len > DICT_HT_INITIAL_SIZE)
-            dictExpand(o->ptr,len);
+            dictExpand((dict *)o->ptr,len);
 
         /* Load remaining fields and values into the hash table */
         while (o->encoding == OBJ_ENCODING_HT && len > 0) {
             len--;
             /* Load encoded strings */
-            if ((field = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
+            if ((field = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
                 == NULL) return NULL;
-            if ((value = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
+            if ((value = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL))
                 == NULL) return NULL;
 
             /* Add pair to hash table */
@@ -1590,14 +1602,14 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
     } else if (rdbtype == RDB_TYPE_LIST_QUICKLIST) {
         if ((len = rdbLoadLen(rdb,NULL)) == RDB_LENERR) return NULL;
         o = createQuicklistObject();
-        quicklistSetOptions(o->ptr, server.list_max_ziplist_size,
+        quicklistSetOptions((quicklist*)o->ptr, server.list_max_ziplist_size,
                             server.list_compress_depth);
 
         while (len--) {
-            unsigned char *zl =
+            unsigned char *zl = (unsigned char*)
                 rdbGenericLoadStringObject(rdb,RDB_LOAD_PLAIN,NULL);
             if (zl == NULL) return NULL;
-            quicklistAppendZiplist(o->ptr, zl);
+            quicklistAppendZiplist((quicklist*)o->ptr, zl);
         }
     } else if (rdbtype == RDB_TYPE_HASH_ZIPMAP  ||
                rdbtype == RDB_TYPE_LIST_ZIPLIST ||
@@ -1605,7 +1617,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
                rdbtype == RDB_TYPE_ZSET_ZIPLIST ||
                rdbtype == RDB_TYPE_HASH_ZIPLIST)
     {
-        unsigned char *encoded =
+        unsigned char *encoded = (unsigned char*)
             rdbGenericLoadStringObject(rdb,RDB_LOAD_PLAIN,NULL);
         if (encoded == NULL) return NULL;
         o = createObject(OBJ_STRING,encoded); /* Obj type fixed below. */
@@ -1622,7 +1634,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
                  * when loading dumps created by Redis 2.4 gets deprecated. */
                 {
                     unsigned char *zl = ziplistNew();
-                    unsigned char *zi = zipmapRewind(o->ptr);
+                    unsigned char *zi = zipmapRewind((unsigned char*)o->ptr);
                     unsigned char *fstr, *vstr;
                     unsigned int flen, vlen;
                     unsigned int maxlen = 0;
@@ -1654,7 +1666,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
             case RDB_TYPE_SET_INTSET:
                 o->type = OBJ_SET;
                 o->encoding = OBJ_ENCODING_INTSET;
-                if (intsetLen(o->ptr) > server.set_max_intset_entries)
+                if (intsetLen((const intset*)o->ptr) > server.set_max_intset_entries)
                     setTypeConvert(o,OBJ_ENCODING_HT);
                 break;
             case RDB_TYPE_ZSET_ZIPLIST:
@@ -1675,14 +1687,14 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
         }
     } else if (rdbtype == RDB_TYPE_STREAM_LISTPACKS) {
         o = createStreamObject();
-        stream *s = o->ptr;
+        stream *s = (stream*)o->ptr;
         uint64_t listpacks = rdbLoadLen(rdb,NULL);
 
         while(listpacks--) {
             /* Get the master ID, the one we'll use as key of the radix tree
              * node: the entries inside the listpack itself are delta-encoded
              * relatively to this ID. */
-            sds nodekey = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
+            sds nodekey = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
             if (nodekey == NULL) {
                 rdbExitReportCorruptRDB("Stream master ID loading failed: invalid encoding or I/O error.");
             }
@@ -1692,7 +1704,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
             }
 
             /* Load the listpack. */
-            unsigned char *lp =
+            unsigned char *lp = (unsigned char*)
                 rdbGenericLoadStringObject(rdb,RDB_LOAD_PLAIN,NULL);
             if (lp == NULL) return NULL;
             unsigned char *first = lpFirst(lp);
@@ -1723,7 +1735,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
              * consumer group ASAP and populate its structure as
              * we read more data. */
             streamID cg_id;
-            sds cgname = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
+            sds cgname = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
             if (cgname == NULL) {
                 rdbExitReportCorruptRDB(
                     "Error reading the consumer group name from Stream");
@@ -1757,7 +1769,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
              * consumers and their local PELs. */
             size_t consumers_num = rdbLoadLen(rdb,NULL);
             while(consumers_num--) {
-                sds cname = rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
+                sds cname = (sds)rdbGenericLoadStringObject(rdb,RDB_LOAD_SDS,NULL);
                 if (cname == NULL) {
                     rdbExitReportCorruptRDB(
                         "Error reading the consumer name from Stream group");
@@ -1773,7 +1785,7 @@ robj *rdbLoadObject(int rdbtype, rio *rdb) {
                 while(pel_size--) {
                     unsigned char rawid[sizeof(streamID)];
                     rdbLoadRaw(rdb,rawid,sizeof(rawid));
-                    streamNACK *nack = raxFind(cgroup->pel,rawid,sizeof(rawid));
+                    streamNACK *nack = (streamNACK*)raxFind(cgroup->pel,rawid,sizeof(rawid));
                     if (nack == raxNotFound)
                         rdbExitReportCorruptRDB("Consumer entry not found in "
                                                 "group global PEL");
@@ -1845,7 +1857,7 @@ void startLoading(FILE *fp) {
     server.loading = 1;
     server.loading_start_time = time(NULL);
     server.loading_loaded_bytes = 0;
-    if (fstat(fileno(fp), &sb) == -1) {
+    if (fstat(fileno(fp), (struct _stat64 *)&sb) == -1) {
         server.loading_total_bytes = 0;
     } else {
         server.loading_total_bytes = sb.st_size;
@@ -1985,16 +1997,16 @@ int rdbLoadRio(rio *rdb, rdbSaveInfo *rsi, int loading_aof) {
                 serverLog(LL_NOTICE,"RDB '%s': %s",
                     (char*)auxkey->ptr,
                     (char*)auxval->ptr);
-            } else if (!strcasecmp(auxkey->ptr,"repl-stream-db")) {
-                if (rsi) rsi->repl_stream_db = atoi(auxval->ptr);
-            } else if (!strcasecmp(auxkey->ptr,"repl-id")) {
-                if (rsi && sdslen(auxval->ptr) == CONFIG_RUN_ID_SIZE) {
+            } else if (!strcasecmp((const char *)auxkey->ptr,"repl-stream-db")) {
+                if (rsi) rsi->repl_stream_db = atoi((const char *)auxval->ptr);
+            } else if (!strcasecmp((const char*)auxkey->ptr,"repl-id")) {
+                if (rsi && sdslen((const sds)auxval->ptr) == CONFIG_RUN_ID_SIZE) {
                     memcpy(rsi->repl_id,auxval->ptr,CONFIG_RUN_ID_SIZE+1);
                     rsi->repl_id_is_set = 1;
                 }
-            } else if (!strcasecmp(auxkey->ptr,"repl-offset")) {
-                if (rsi) rsi->repl_offset = strtoll(auxval->ptr,NULL,10);
-            } else if (!strcasecmp(auxkey->ptr,"lua")) {
+            } else if (!strcasecmp((const char*)auxkey->ptr,"repl-offset")) {
+                if (rsi) rsi->repl_offset = strtoll((const char *)auxval->ptr,NULL,10);
+            } else if (!strcasecmp((const char*)auxkey->ptr,"lua")) {
                 /* Load the script back in memory. */
                 if (luaCreateFunction(NULL,server.lua,auxval) == NULL) {
                     rdbExitReportCorruptRDB(
@@ -2146,7 +2158,7 @@ void backgroundSaveDoneHandlerDisk(int exitcode, int bysignal) {
             server.lastbgsave_status = C_ERR;
 #endif
     }
-    server.rdb_child_pid = -1;
+    server.rdb_child_pid = INVALID_HANDLE_VALUE;
     server.rdb_child_type = RDB_CHILD_TYPE_NONE;
     server.rdb_save_time_last = time(NULL)-server.rdb_save_time_start;
     server.rdb_save_time_start = -1;
@@ -2170,7 +2182,7 @@ void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
         serverLog(LL_WARNING,
             "Background transfer terminated by signal %d", bysignal);
     }
-    server.rdb_child_pid = -1;
+    server.rdb_child_pid = INVALID_HANDLE_VALUE;
     server.rdb_child_type = RDB_CHILD_TYPE_NONE;
     server.rdb_save_time_start = -1;
 
@@ -2181,7 +2193,7 @@ void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
      * If the process returned an error, consider the list of slaves that
      * can continue to be empty, so that it's just a special case of the
      * normal code path. */
-    ok_slaves = zmalloc(sizeof(uint64_t)); /* Make space for the count. */
+    ok_slaves = (uint64_t*)zmalloc(sizeof(uint64_t)); /* Make space for the count. */
     ok_slaves[0] = 0;
     if (!bysignal && exitcode == 0) {
         int readlen = sizeof(uint64_t);
@@ -2193,7 +2205,7 @@ void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
 
             /* Make space for enough elements as specified by the first
              * uint64_t element in the array. */
-            ok_slaves = zrealloc(ok_slaves,sizeof(uint64_t)+readlen);
+            ok_slaves = (uint64_t*)zrealloc(ok_slaves,sizeof(uint64_t)+readlen);
             if (readlen &&
                 read(server.rdb_pipe_read_result_from_child, ok_slaves+1,
                      readlen) != readlen)
@@ -2213,7 +2225,7 @@ void backgroundSaveDoneHandlerSocket(int exitcode, int bysignal) {
 
     listRewind(server.slaves,&li);
     while((ln = listNext(&li))) {
-        client *slave = ln->value;
+        client *slave = (client*)ln->value;
 
         if (slave->replstate == SLAVE_STATE_WAIT_BGSAVE_END) {
             uint64_t j;
@@ -2273,11 +2285,15 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     int numfds;
     listNode *ln;
     listIter li;
+#ifdef _WIN32
+    HANDLE childpid;
+#else
     pid_t childpid;
+#endif
     long long start;
     int pipefds[2];
 
-    if (server.aof_child_pid != -1 || server.rdb_child_pid != -1) return C_ERR;
+    if (server.aof_child_pid != INVALID_HANDLE_VALUE || server.rdb_child_pid != INVALID_HANDLE_VALUE) return C_ERR;
 
     /* Before to fork, create a pipe that will be used in order to
      * send back to the parent the IDs of the slaves that successfully
@@ -2288,16 +2304,16 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
 
     /* Collect the file descriptors of the slaves we want to transfer
      * the RDB to, which are i WAIT_BGSAVE_START state. */
-    fds = zmalloc(sizeof(int)*listLength(server.slaves));
+    fds = (int *)zmalloc(sizeof(int)*listLength(server.slaves));
     /* We also allocate an array of corresponding client IDs. This will
      * be useful for the child process in order to build the report
      * (sent via unix pipe) that will be sent to the parent. */
-    clientids = zmalloc(sizeof(uint64_t)*listLength(server.slaves));
+    clientids = (uint64_t*)zmalloc(sizeof(uint64_t)*listLength(server.slaves));
     numfds = 0;
 
     listRewind(server.slaves,&li);
     while((ln = listNext(&li))) {
-        client *slave = ln->value;
+        client *slave = (client*)ln->value;
 
         if (slave->replstate == SLAVE_STATE_WAIT_BGSAVE_START) {
             clientids[numfds] = slave->id;
@@ -2316,7 +2332,8 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     start = ustime();
 
 #ifdef _WIN32
-    childpid = BeginForkOperation_Socket(fds, numfds, clientids, pipefds[1], &server, sizeof(server), dictGetHashFunctionSeed());
+    childpid = (HANDLE)BeginForkOperation_Socket(fds, numfds, clientids, pipefds[1], &server,
+        sizeof(server), (uint32_t)dictGetHashFunctionSeed());
 #else
 
     if ((childpid = fork()) == 0) {
@@ -2391,7 +2408,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
     } else {
 #endif
         /* Parent */
-        if (childpid == -1) {
+        if (childpid == INVALID_HANDLE_VALUE) {
             serverLog(LL_WARNING,"Can't save in background: fork: %s",
                 strerror(errno));
 
@@ -2400,7 +2417,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
              * replicationSetupSlaveForFullResync() turned it into BGSAVE_END */
             listRewind(server.slaves,&li);
             while((ln = listNext(&li))) {
-                client *slave = ln->value;
+                client *slave = (client*)ln->value;
                 int j;
 
                 for (j = 0; j < numfds; j++) {
@@ -2427,7 +2444,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
         }
         zfree(clientids);
         zfree(fds);
-        return (childpid == -1) ? C_ERR : C_OK;
+        return (childpid == INVALID_HANDLE_VALUE) ? C_ERR : C_OK;
 #ifndef _WIN32
     }
 #endif
@@ -2436,7 +2453,7 @@ int rdbSaveToSlavesSockets(rdbSaveInfo *rsi) {
 }
 
 void saveCommand(client *c) {
-    if (server.rdb_child_pid != -1) {
+    if (server.rdb_child_pid != INVALID_HANDLE_VALUE) {
         addReplyError(c,"Background save already in progress");
         return;
     }
@@ -2456,7 +2473,7 @@ void bgsaveCommand(client *c) {
     /* The SCHEDULE option changes the behavior of BGSAVE when an AOF rewrite
      * is in progress. Instead of returning an error a BGSAVE gets scheduled. */
     if (c->argc > 1) {
-        if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"schedule")) {
+        if (c->argc == 2 && !strcasecmp((const char *)c->argv[1]->ptr,"schedule")) {
             schedule = 1;
         } else {
             addReply(c,shared.syntaxerr);
@@ -2467,9 +2484,9 @@ void bgsaveCommand(client *c) {
     rdbSaveInfo rsi, *rsiptr;
     rsiptr = rdbPopulateSaveInfo(&rsi);
 
-    if (server.rdb_child_pid != -1) {
+    if (server.rdb_child_pid != INVALID_HANDLE_VALUE) {
         addReplyError(c,"Background save already in progress");
-    } else if (server.aof_child_pid != -1) {
+    } else if (server.aof_child_pid != INVALID_HANDLE_VALUE) {
         if (schedule) {
             server.rdb_bgsave_scheduled = 1;
             addReplyStatus(c,"Background saving scheduled");

@@ -14,10 +14,10 @@ typedef struct streamID {
 } streamID;
 
 typedef struct stream {
-    rax *rax;               /* The radix tree holding the stream. */
+    struct rax *rax;               /* The radix tree holding the stream. */
     uint64_t length;        /* Number of elements inside this stream. */
     streamID last_id;       /* Zero if there are yet no items. */
-    rax *cgroups;           /* Consumer groups dictionary: name -> streamCG */
+    struct rax *cgroups;           /* Consumer groups dictionary: name -> streamCG */
 } stream;
 
 /* We define an iterator to iterate stream items in an abstract way, without
@@ -94,7 +94,7 @@ typedef struct sreamPropInfo {
 } streamPropInfo;
 
 /* Prototypes of exported APIs. */
-struct client;
+struct _client;
 
 stream *streamNew(void);
 void freeStream(stream *s);

@@ -175,7 +175,7 @@ int redis_check_aof_main(int argc, char **argv) {
     }
 
     struct redis_stat sb;
-    if (redis_fstat(fileno(fp),&sb) == -1) {
+    if (redis_fstat(fileno(fp), (struct _stat64 *)&sb) == -1) {
         printf("Cannot stat file: %s\n", filename);
         exit(1);
     }

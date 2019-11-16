@@ -29,6 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #ifdef _WIN32
+#include "../../src/Win32_Interop/win32_types.h"
 #include "win32_hiredis.h"
 #include "../../src/Win32_Interop/win32_wsiocp2.h"
 #endif
@@ -73,7 +74,7 @@ static unsigned int callbackHash(const void *key) {
 
 static void *callbackValDup(void *privdata, const void *src) {
     ((void) privdata);
-    redisCallback *dup = malloc(sizeof(*dup));
+    redisCallback *dup = (redisCallback*)malloc(sizeof(*dup));
     memcpy(dup,src,sizeof(*dup));
     return dup;
 }
@@ -110,7 +111,7 @@ static dictType callbackDict = {
 static redisAsyncContext *redisAsyncInitialize(redisContext *c) {
     redisAsyncContext *ac;
 
-    ac = realloc(c,sizeof(redisAsyncContext));
+    ac = (redisAsyncContext *)realloc(c,sizeof(redisAsyncContext));
     if (ac == NULL)
         return NULL;
 
@@ -234,7 +235,7 @@ static int __redisPushCallback(redisCallbackList *list, redisCallback *source) {
     redisCallback *cb;
 
     /* Copy callback from stack to heap */
-    cb = malloc(sizeof(*cb));
+    cb = (redisCallback*)malloc(sizeof(*cb));
     if (cb == NULL)
         return REDIS_ERR_OOM;
 
@@ -295,13 +296,13 @@ static void __redisAsyncFree(redisAsyncContext *ac) {
     /* Run subscription callbacks callbacks with NULL reply */
     it = dictGetIterator(ac->sub.channels);
     while ((de = dictNext(it)) != NULL)
-        __redisRunCallback(ac,dictGetEntryVal(de),NULL);
+        __redisRunCallback(ac,(redisCallback*)dictGetEntryVal(de),NULL);
     dictReleaseIterator(it);
     dictRelease(ac->sub.channels);
 
     it = dictGetIterator(ac->sub.patterns);
     while ((de = dictNext(it)) != NULL)
-        __redisRunCallback(ac,dictGetEntryVal(de),NULL);
+        __redisRunCallback(ac,(redisCallback*)dictGetEntryVal(de),NULL);
     dictReleaseIterator(it);
     dictRelease(ac->sub.patterns);
 
@@ -472,11 +473,11 @@ void redisProcessCallbacks(redisAsyncContext *ac) {
             /* No more regular callbacks and no errors, the context *must* be subscribed or monitoring. */
             assert((c->flags & REDIS_SUBSCRIBED || c->flags & REDIS_MONITORING));
             if(c->flags & REDIS_SUBSCRIBED)
-                __redisGetSubscribeCallback(ac,reply,&cb);
+                __redisGetSubscribeCallback(ac,(redisReply*)reply,&cb);
         }
 
         if (cb.fn != NULL) {
-            __redisRunCallback(ac,&cb,reply);
+            __redisRunCallback(ac,&cb,(redisReply*)reply);
             c->reader->fn->freeObject(reply);
 
             /* Proceed with free'ing when redisAsyncFree() was called. */

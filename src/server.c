@@ -147,7 +147,7 @@ volatile unsigned long lru_clock; /* Server global current LRU time. */
  *    Note that commands that may trigger a DEL as a side effect (like SET)
  *    are not fast commands.
  */
-struct redisCommand redisCommandTable[] = {
+_redisCommand redisCommandTable[] = {
     {"module",moduleCommand,-2,"as",0,NULL,0,0,0,0,0},
     {"get",getCommand,2,"rF",0,NULL,1,1,1,0,0},
     {"set",setCommand,-3,"wm",0,NULL,1,1,1,0,0},
@@ -358,25 +358,24 @@ void nolocks_localtime(struct tm *tmp, time_t t, time_t tz, int dst);
 
 #ifdef _WIN32
 void redisLogFromHandler(int level, const char *msg) {
-    int fd;
+    FILE *fd;
     int log_to_stdout = server.logfile[0] == '\0';
     char buf[64];
 
     if ((level & 0xff) < server.verbosity || (log_to_stdout && server.daemonize))
         return;
-    fd = log_to_stdout ? STDOUT_FILENO :
-        fopen(server.logfile, O_APPEND | O_CREAT | O_WRONLY, 0644);
-    if (fd == -1) return;
+    fd = log_to_stdout ? stdout : fopen(server.logfile, "a+");
+    if (fd == NULL) return;
     sprintf(buf, "%ll", getpid());
-    if (write(fd, buf, strlen(buf)) == -1) goto err;
-    if (write(fd, ":signal-handler (", 17) == -1) goto err;
+    if (fwrite(buf, strlen(buf), 1, fd) == -1) goto err;
+    if (fwrite(":signal-handler (", 17, 1, fd) == -1) goto err;
     sprintf(buf, "%ll", time(NULL));
-    if (write(fd, buf, strlen(buf)) == -1) goto err;
-    if (write(fd, ") ", 2) == -1) goto err;
-    if (write(fd, msg, strlen(msg)) == -1) goto err;
-    if (write(fd, "\n", 1) == -1) goto err;
+    if (fwrite(buf, strlen(buf), 1, fd) == -1) goto err;
+    if (fwrite(") ", 2, 1, fd) == -1) goto err;
+    if (fwrite(msg, strlen(msg), 1, fd) == -1) goto err;
+    if (fwrite("\n", 1, 1, fd) == -1) goto err;
 err:
-    if (!log_to_stdout) close(fd);
+    if (!log_to_stdout) fclose(fd);
 }
 #else // redisLog code moved to Win32_Interop/Win32_RedisLog.c for sharing across binaries
 /* Low level logging. To use only for very big messages, otherwise
@@ -538,7 +537,7 @@ int dictSdsKeyCaseCompare(void *privdata, const void *key1,
 {
     DICT_NOTUSED(privdata);
 
-    return strcasecmp(key1, key2) == 0;
+    return strcasecmp((const char*)key1, (const char*)key2) == 0;
 }
 
 void dictObjectDestructor(void *privdata, void *val)
@@ -546,25 +545,25 @@ void dictObjectDestructor(void *privdata, void *val)
     DICT_NOTUSED(privdata);
 
     if (val == NULL) return; /* Lazy freeing will set value to NULL. */
-    decrRefCount(val);
+    decrRefCount((robj*)val);
 }
 
 void dictSdsDestructor(void *privdata, void *val)
 {
     DICT_NOTUSED(privdata);
 
-    sdsfree(val);
+    sdsfree((sds)val);
 }
 
 int dictObjKeyCompare(void *privdata, const void *key1,
         const void *key2)
 {
-    const robj *o1 = key1, *o2 = key2;
+    const robj *o1 = (const robj*)key1, *o2 = (const robj*)key2;
     return dictSdsKeyCompare(privdata,o1->ptr,o2->ptr);
 }
 
 uint64_t dictObjHash(const void *key) {
-    const robj *o = key;
+    const robj *o = (const robj*)key;
     return dictGenHashFunction(o->ptr, sdslen((sds)o->ptr));
 }
 
@@ -824,7 +823,7 @@ int incrementallyRehash(int dbid) {
  * for dict.c to resize the hash tables accordingly to the fact we have o not
  * running childs. */
 void updateDictResizePolicy(void) {
-    if (server.rdb_child_pid == -1 && server.aof_child_pid == -1)
+    if (server.rdb_child_pid == INVALID_HANDLE_VALUE && server.aof_child_pid == INVALID_HANDLE_VALUE)
         dictEnableResize();
     else
         dictDisableResize();
@@ -1035,7 +1034,7 @@ void clientsCron(void) {
          * first element and we don't incur into O(N) computation. */
         listRotate(server.clients);
         head = listFirst(server.clients);
-        c = listNodeValue(head);
+        c = (client*)listNodeValue(head);
         /* The following functions do different service checks on the client.
          * The protocol is that they return non-zero if the client was
          * terminated. */
@@ -1064,7 +1063,7 @@ void databasesCron(void) {
     /* Perform hash tables rehashing if needed, but only if there are no
      * other processes saving the DB on disk. Otherwise rehashing is bad
      * as will cause a lot of copy-on-write of memory pages. */
-    if (server.rdb_child_pid == -1 && server.aof_child_pid == -1) {
+    if (server.rdb_child_pid == INVALID_HANDLE_VALUE && server.aof_child_pid == INVALID_HANDLE_VALUE) {
         /* We use global counters so if we stop the computation at a given
          * DB we'll be able to start from the successive in the next
          * cron loop iteration. */
@@ -1267,14 +1266,14 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Start a scheduled AOF rewrite if this was requested by the user while
      * a BGSAVE was in progress. */
-    if (server.rdb_child_pid == -1 && server.aof_child_pid == -1 &&
+    if (server.rdb_child_pid == INVALID_HANDLE_VALUE && server.aof_child_pid == INVALID_HANDLE_VALUE &&
         server.aof_rewrite_scheduled)
     {
         rewriteAppendOnlyFileBackground();
     }
 
     /* Check if a background saving or AOF rewrite in progress terminated. */
-    if (server.rdb_child_pid != -1 || server.aof_child_pid != -1 ||
+    if (server.rdb_child_pid != INVALID_HANDLE_VALUE || server.aof_child_pid != INVALID_HANDLE_VALUE ||
         ldbPendingChildren())
     {
 #ifdef _WIN32
@@ -1287,10 +1286,10 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
                 redisLog(REDIS_WARNING, (bySignal ? "fork operation failed" : "fork operation complete"));
                 EndForkOperation(&exitCode);
                 ResumeFromSuspension();
-                if (server.rdb_child_pid == -1) {
+                if (server.rdb_child_pid == INVALID_HANDLE_VALUE) {
                     backgroundSaveDoneHandler(exitCode, bySignal);
                 }
-                else if (server.aof_child_pid == -1) {
+                else if (server.aof_child_pid == INVALID_HANDLE_VALUE) {
                     backgroundRewriteDoneHandler(exitCode, bySignal);
                 }
                 updateDictResizePolicy();
@@ -1357,8 +1356,8 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
         /* Trigger an AOF rewrite if needed. */
         if (server.aof_state == AOF_ON &&
-            server.rdb_child_pid == -1 &&
-            server.aof_child_pid == -1 &&
+            server.rdb_child_pid == INVALID_HANDLE_VALUE &&
+            server.aof_child_pid == INVALID_HANDLE_VALUE &&
             server.aof_rewrite_perc &&
             server.aof_current_size > server.aof_rewrite_min_size)
         {
@@ -1416,7 +1415,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
      * Note: this code must be after the replicationCron() call above so
      * make sure when refactoring this file to keep this order. This is useful
      * because we want to give priority to RDB savings for replication. */
-    if (server.rdb_child_pid == -1 && server.aof_child_pid == -1 &&
+    if (server.rdb_child_pid == INVALID_HANDLE_VALUE && server.aof_child_pid == INVALID_HANDLE_VALUE &&
         server.rdb_bgsave_scheduled &&
         (server.unixtime-server.lastbgsave_try > CONFIG_BGSAVE_RETRY_DELAY ||
          server.lastbgsave_status == C_OK))
@@ -2143,7 +2142,7 @@ void initServer(void) {
             strerror(errno));
         exit(1);
     }
-    server.db = zmalloc(sizeof(redisDb)*server.dbnum);
+    server.db = (redisDb*)zmalloc(sizeof(redisDb)*server.dbnum);
 
     /* Open the TCP listening socket for the user commands. */
     if (server.port != 0 &&
@@ -2185,8 +2184,8 @@ void initServer(void) {
     listSetFreeMethod(server.pubsub_patterns,freePubsubPattern);
     listSetMatchMethod(server.pubsub_patterns,listMatchPubsubPattern);
     server.cronloops = 0;
-    server.rdb_child_pid = -1;
-    server.aof_child_pid = -1;
+    server.rdb_child_pid = INVALID_HANDLE_VALUE;
+    server.aof_child_pid = INVALID_HANDLE_VALUE;
     server.rdb_child_type = RDB_CHILD_TYPE_NONE;
     server.rdb_bgsave_scheduled = 0;
     server.child_info_pipe[0] = -1;
@@ -2282,10 +2281,10 @@ void initServer(void) {
  * we have on top of redis.c file. */
 void populateCommandTable(void) {
     int j;
-    int numcommands = sizeof(redisCommandTable)/sizeof(struct redisCommand);
+    int numcommands = sizeof(redisCommandTable)/sizeof(_redisCommand);
 
     for (j = 0; j < numcommands; j++) {
-        struct redisCommand *c = redisCommandTable+j;
+        _redisCommand *c = redisCommandTable+j;
         char *f = c->sflags;
         int retval1, retval2;
 
@@ -2318,13 +2317,13 @@ void populateCommandTable(void) {
 }
 
 void resetCommandTableStats(void) {
-    struct redisCommand *c;
+    _redisCommand *c;
     dictEntry *de;
     dictIterator *di;
 
     di = dictGetSafeIterator(server.commands);
     while((de = dictNext(di)) != NULL) {
-        c = (struct redisCommand *) dictGetVal(de);
+        c = (_redisCommand *) dictGetVal(de);
         c->microseconds = 0;
         c->calls = 0;
     }
@@ -2339,12 +2338,12 @@ void redisOpArrayInit(redisOpArray *oa) {
     oa->numops = 0;
 }
 
-int redisOpArrayAppend(redisOpArray *oa, struct redisCommand *cmd, int dbid,
+int redisOpArrayAppend(redisOpArray *oa, _redisCommand *cmd, int dbid,
                        robj **argv, int argc, int target)
 {
     redisOp *op;
 
-    oa->ops = zrealloc(oa->ops,sizeof(redisOp)*(oa->numops+1));
+    oa->ops = (redisOp*)zrealloc(oa->ops,sizeof(redisOp)*(oa->numops+1));
     op = oa->ops+oa->numops;
     op->cmd = cmd;
     op->dbid = dbid;
@@ -2371,15 +2370,15 @@ void redisOpArrayFree(redisOpArray *oa) {
 
 /* ====================== Commands lookup and execution ===================== */
 
-struct redisCommand *lookupCommand(sds name) {
-    return dictFetchValue(server.commands, name);
+_redisCommand *lookupCommand(sds name) {
+    return (_redisCommand*)dictFetchValue(server.commands, name);
 }
 
-struct redisCommand *lookupCommandByCString(char *s) {
-    struct redisCommand *cmd;
+_redisCommand *lookupCommandByCString(char *s) {
+    _redisCommand *cmd;
     sds name = sdsnew(s);
 
-    cmd = dictFetchValue(server.commands, name);
+    cmd = (_redisCommand*)dictFetchValue(server.commands, name);
     sdsfree(name);
     return cmd;
 }
@@ -2391,10 +2390,10 @@ struct redisCommand *lookupCommandByCString(char *s) {
  * This is used by functions rewriting the argument vector such as
  * rewriteClientCommandVector() in order to set client->cmd pointer
  * correctly even if the command was renamed. */
-struct redisCommand *lookupCommandOrOriginal(sds name) {
-    struct redisCommand *cmd = dictFetchValue(server.commands, name);
+_redisCommand *lookupCommandOrOriginal(sds name) {
+    _redisCommand *cmd = (_redisCommand*)dictFetchValue(server.commands, name);
 
-    if (!cmd) cmd = dictFetchValue(server.orig_commands,name);
+    if (!cmd) cmd = (_redisCommand*)dictFetchValue(server.orig_commands,name);
     return cmd;
 }
 
@@ -2409,7 +2408,7 @@ struct redisCommand *lookupCommandOrOriginal(sds name) {
  * This should not be used inside commands implementation. Use instead
  * alsoPropagate(), preventCommandPropagation(), forceCommandPropagation().
  */
-void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
+void propagate(_redisCommand *cmd, int dbid, robj **argv, int argc,
                int flags)
 {
     if (server.aof_state != AOF_OFF && flags & PROPAGATE_AOF)
@@ -2430,7 +2429,7 @@ void propagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
  * so it is up to the caller to release the passed argv (but it is usually
  * stack allocated).  The function autoamtically increments ref count of
  * passed objects, so the caller does not need to. */
-void alsoPropagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
+void alsoPropagate(_redisCommand *cmd, int dbid, robj **argv, int argc,
                    int target)
 {
     robj **argvcopy;
@@ -2438,7 +2437,7 @@ void alsoPropagate(struct redisCommand *cmd, int dbid, robj **argv, int argc,
 
     if (server.loading) return; /* No propagation during loading. */
 
-    argvcopy = zmalloc(sizeof(robj*)*argc);
+    argvcopy = (robj**)zmalloc(sizeof(robj*)*argc);
     for (j = 0; j < argc; j++) {
         argvcopy[j] = argv[j];
         incrRefCount(argv[j]);
@@ -2511,7 +2510,7 @@ void preventCommandReplication(client *c) {
 void call(client *c, int flags) {
     long long dirty, start, duration;
     int client_old_flags = c->flags;
-    struct redisCommand *real_cmd = c->cmd;
+    _redisCommand *real_cmd = c->cmd;
 
     /* Sent the command to clients in MONITOR mode, only if the commands are
      * not generated from reading an AOF. */
@@ -2642,7 +2641,7 @@ int processCommand(client *c) {
      * go through checking for replication and QUIT will cause trouble
      * when FORCE_REPLICATION is enabled and would be implemented in
      * a regular command proc. */
-    if (!strcasecmp(c->argv[0]->ptr,"quit")) {
+    if (!strcasecmp((const char*)c->argv[0]->ptr,"quit")) {
         addReply(c,shared.ok);
         c->flags |= CLIENT_CLOSE_AFTER_REPLY;
         return C_ERR;
@@ -2650,7 +2649,7 @@ int processCommand(client *c) {
 
     /* Now lookup the command and check ASAP about trivial error conditions
      * such as wrong arity, bad command name and so forth. */
-    c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);
+    c->cmd = c->lastcmd = lookupCommand((sds)c->argv[0]->ptr);
     if (!c->cmd) {
         flagTransaction(c);
         sds args = sdsempty();
@@ -2860,7 +2859,7 @@ int prepareForShutdown(int flags) {
     /* Kill the saving child if there is a background saving in progress.
        We want to avoid race conditions, for instance our saving child may
        overwrite the synchronous saving did by SHUTDOWN. */
-    if (server.rdb_child_pid != -1) {
+    if (server.rdb_child_pid != INVALID_HANDLE_VALUE) {
         serverLog(LL_WARNING,"There is a child saving an .rdb. Killing it!");
 #ifdef _WIN32
         TerminateProcess(server.rdb_child_pid, 1);
@@ -2873,7 +2872,7 @@ int prepareForShutdown(int flags) {
     if (server.aof_state != AOF_OFF) {
         /* Kill the AOF saving child as the AOF we already have may be longer
          * but contains the full dataset anyway. */
-        if (server.aof_child_pid != -1) {
+        if (server.aof_child_pid != INVALID_HANDLE_VALUE) {
             /* If we have AOF enabled but haven't written the AOF yet, don't
              * shutdown or else the dataset will be lost. */
             if (server.aof_state == AOF_WAIT_REWRITE) {
@@ -3001,7 +3000,7 @@ int time_independent_strcmp(char *a, char *b) {
 void authCommand(client *c) {
     if (!server.requirepass) {
         addReplyError(c,"Client sent AUTH, but no password is set");
-    } else if (!time_independent_strcmp(c->argv[1]->ptr, server.requirepass)) {
+    } else if (!time_independent_strcmp((char *)c->argv[1]->ptr, server.requirepass)) {
       c->authenticated = 1;
       addReply(c,shared.ok);
     } else {
@@ -3051,7 +3050,7 @@ void timeCommand(client *c) {
 }
 
 /* Helper function for addReplyCommand() to output flags. */
-int addReplyCommandFlag(client *c, struct redisCommand *cmd, int f, char *reply) {
+int addReplyCommandFlag(client *c, _redisCommand *cmd, int f, char *reply) {
     if (cmd->flags & f) {
         addReplyStatus(c, reply);
         return 1;
@@ -3060,7 +3059,7 @@ int addReplyCommandFlag(client *c, struct redisCommand *cmd, int f, char *reply)
 }
 
 /* Output the representation of a Redis command. Used by the COMMAND command. */
-void addReplyCommand(client *c, struct redisCommand *cmd) {
+void addReplyCommand(client *c, _redisCommand *cmd) {
     if (!cmd) {
         addReply(c, shared.nullbulk);
     } else {
@@ -3103,7 +3102,7 @@ void commandCommand(client *c) {
     dictIterator *di;
     dictEntry *de;
 
-    if (c->argc == 2 && !strcasecmp(c->argv[1]->ptr,"help")) {
+    if (c->argc == 2 && !strcasecmp((const char*)c->argv[1]->ptr,"help")) {
         const char *help[] = {
 "(no subcommand) -- Return details about all Redis commands.",
 "COUNT -- Return the total number of commands in this Redis server.",
@@ -3116,19 +3115,19 @@ NULL
         addReplyMultiBulkLen(c, dictSize(server.commands));
         di = dictGetIterator(server.commands);
         while ((de = dictNext(di)) != NULL) {
-            addReplyCommand(c, dictGetVal(de));
+            addReplyCommand(c, (_redisCommand*)dictGetVal(de));
         }
         dictReleaseIterator(di);
-    } else if (!strcasecmp(c->argv[1]->ptr, "info")) {
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr, "info")) {
         int i;
         addReplyMultiBulkLen(c, c->argc-2);
         for (i = 2; i < c->argc; i++) {
-            addReplyCommand(c, dictFetchValue(server.commands, c->argv[i]->ptr));
+            addReplyCommand(c, (_redisCommand*)dictFetchValue(server.commands, c->argv[i]->ptr));
         }
-    } else if (!strcasecmp(c->argv[1]->ptr, "count") && c->argc == 2) {
+    } else if (!strcasecmp((const char *)c->argv[1]->ptr, "count") && c->argc == 2) {
         addReplyLongLong(c, dictSize(server.commands));
-    } else if (!strcasecmp(c->argv[1]->ptr,"getkeys") && c->argc >= 3) {
-        struct redisCommand *cmd = lookupCommand(c->argv[2]->ptr);
+    } else if (!strcasecmp((const char*)c->argv[1]->ptr,"getkeys") && c->argc >= 3) {
+        _redisCommand *cmd = lookupCommand((sds)c->argv[2]->ptr);
         int *keys, numkeys, j;
 
         if (!cmd) {
@@ -3437,18 +3436,18 @@ sds genRedisInfoString(char *section) {
             "aof_last_cow_size:%zu\r\n",
             server.loading,
             server.dirty,
-            server.rdb_child_pid != -1,
+            server.rdb_child_pid != INVALID_HANDLE_VALUE,
             (intmax_t)server.lastsave,
             (server.lastbgsave_status == C_OK) ? "ok" : "err",
             (intmax_t)server.rdb_save_time_last,
-            (intmax_t)((server.rdb_child_pid == -1) ?
+            (intmax_t)((server.rdb_child_pid == INVALID_HANDLE_VALUE) ?
                 -1 : time(NULL)-server.rdb_save_time_start),
             server.stat_rdb_cow_bytes,
             server.aof_state != AOF_OFF,
-            server.aof_child_pid != -1,
+            server.aof_child_pid != INVALID_HANDLE_VALUE,
             server.aof_rewrite_scheduled,
             (intmax_t)server.aof_rewrite_time_last,
-            (intmax_t)((server.aof_child_pid == -1) ?
+            (intmax_t)((server.aof_child_pid == INVALID_HANDLE_VALUE) ?
                 -1 : time(NULL)-server.aof_rewrite_time_start),
             (server.aof_lastbgrewrite_status == C_OK) ? "ok" : "err",
             (server.aof_last_write_status == C_OK) ? "ok" : "err",
@@ -3637,7 +3636,7 @@ sds genRedisInfoString(char *section) {
 
             listRewind(server.slaves,&li);
             while((ln = listNext(&li))) {
-                client *slave = listNodeValue(ln);
+                client *slave = (client*)listNodeValue(ln);
                 char *state = NULL;
                 char ip[NET_IP_STR_LEN], *slaveip = slave->slave_ip;
                 int port;
@@ -3711,12 +3710,12 @@ sds genRedisInfoString(char *section) {
         if (sections++) info = sdscat(info,"\r\n");
         info = sdscatprintf(info, "# Commandstats\r\n");
 
-        struct redisCommand *c;
+        _redisCommand *c;
         dictEntry *de;
         dictIterator *di;
         di = dictGetSafeIterator(server.commands);
         while((de = dictNext(di)) != NULL) {
-            c = (struct redisCommand *) dictGetVal(de);
+            c = (_redisCommand *) dictGetVal(de);
             if (!c->calls) continue;
             info = sdscatprintf(info,
                 "cmdstat_%s:calls=%lld,usec=%lld,usec_per_call=%.2f\r\n",
@@ -3755,7 +3754,7 @@ sds genRedisInfoString(char *section) {
 }
 
 void infoCommand(client *c) {
-    char *section = c->argc == 2 ? c->argv[1]->ptr : "default";
+    char *section = (char *)(c->argc == 2 ? c->argv[1]->ptr : "default");
 
     if (c->argc > 2) {
         addReply(c,shared.syntaxerr);
@@ -3863,7 +3862,7 @@ void usage(void) {
 
 void redisAsciiArt(void) {
 #include "asciilogo.h"
-    char *buf = zmalloc(1024*16);
+    char *buf = (char *)zmalloc(1024*16);
     char *mode;
 
     if (server.cluster_enabled) mode = "cluster";
@@ -3917,7 +3916,11 @@ static void sigShutdownHandler(int sig) {
      * on disk. */
     if (server.shutdown_asap && sig == SIGINT) {
         serverLogFromHandler(LL_WARNING, "You insist... exiting now.");
+#ifdef _WIN32
+        rdbRemoveTempFile(GetCurrentProcess());
+#else
         rdbRemoveTempFile(getpid());
+#endif
         exit(1); /* Exit with an error since this was not a clean shutdown. */
     } else if (server.loading) {
         exit(0);
@@ -4174,7 +4177,7 @@ int main(int argc, char **argv) {
     /* Store the executable path and arguments in a safe place in order
      * to be able to restart the server later. */
     server.executable = getAbsolutePath(argv[0]);
-    server.exec_argv = zmalloc(sizeof(char*)*(argc+1));
+    server.exec_argv = (char **)zmalloc(sizeof(char*)*(argc+1));
     server.exec_argv[argc] = NULL;
     for (j = 0; j < argc; j++) server.exec_argv[j] = zstrdup(argv[j]);
 
@@ -4320,5 +4323,6 @@ int main(int argc, char **argv) {
     aeDeleteEventLoop(server.el);
     return 0;
 }
+
 
 /* The End */

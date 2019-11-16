@@ -34,7 +34,6 @@ hi_set_blocking(int sd)
 {
 #ifdef _WIN32
     u_long mode = 0;
-    int result;
 
     return ioctlsocket(sd, FIONBIO, &mode);
 #else
@@ -54,7 +53,6 @@ hi_set_nonblocking(int sd)
 {
 #ifdef _WIN32
     u_long mode = 1;
-    int result;
 
     return ioctlsocket(sd, FIONBIO, &mode);
 #else
@@ -77,8 +75,11 @@ hi_set_reuseaddr(int sd)
 
     reuse = 1;
     len = sizeof(reuse);
-
+#ifdef _WIN32
+    return setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, len);
+#else
     return setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &reuse, len);
+#endif
 }
 
 /*
@@ -98,7 +99,11 @@ hi_set_tcpnodelay(int sd)
     nodelay = 1;
     len = sizeof(nodelay);
 
+#ifdef _WIN32
+    return setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char *)&nodelay, len);
+#else
     return setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, &nodelay, len);
+#endif
 }
 
 int
@@ -112,7 +117,11 @@ hi_set_linger(int sd, int timeout)
 
     len = sizeof(linger);
 
+#ifdef _WIN32
+    return setsockopt(sd, SOL_SOCKET, SO_LINGER, (char *)&linger, len);
+#else
     return setsockopt(sd, SOL_SOCKET, SO_LINGER, &linger, len);
+#endif
 }
 
 int
@@ -122,7 +131,11 @@ hi_set_sndbuf(int sd, int size)
 
     len = sizeof(size);
 
+#ifdef _WIN32
+    return setsockopt(sd, SOL_SOCKET, SO_SNDBUF, (char*)&size, len);
+#else
     return setsockopt(sd, SOL_SOCKET, SO_SNDBUF, &size, len);
+#endif
 }
 
 int
@@ -132,7 +145,11 @@ hi_set_rcvbuf(int sd, int size)
 
     len = sizeof(size);
 
+#ifdef _WIN32
+    return setsockopt(sd, SOL_SOCKET, SO_RCVBUF, (char*)&size, len);
+#else
     return setsockopt(sd, SOL_SOCKET, SO_RCVBUF, &size, len);
+#endif
 }
 
 int
@@ -144,7 +161,11 @@ hi_get_soerror(int sd)
     err = 0;
     len = sizeof(err);
 
+#ifdef _WIN32
+    status = getsockopt(sd, SOL_SOCKET, SO_ERROR, (char*)&err, &len);
+#else
     status = getsockopt(sd, SOL_SOCKET, SO_ERROR, &err, &len);
+#endif
     if (status == 0) {
         errno = err;
     }
@@ -161,7 +182,11 @@ hi_get_sndbuf(int sd)
     size = 0;
     len = sizeof(size);
 
-    status = getsockopt(sd, SOL_SOCKET, SO_SNDBUF, &size, &len);
+#ifdef _WIN32
+    status = getsockopt(sd, SOL_SOCKET, SO_ERROR, (char*)&size, &len);
+#else
+    status = getsockopt(sd, SOL_SOCKET, SO_ERROR, &size, &len);
+#endif
     if (status < 0) {
         return status;
     }
@@ -178,7 +203,11 @@ hi_get_rcvbuf(int sd)
     size = 0;
     len = sizeof(size);
 
+#ifdef _WIN32
+    status = getsockopt(sd, SOL_SOCKET, SO_RCVBUF, (char*)&size, &len);
+#else
     status = getsockopt(sd, SOL_SOCKET, SO_RCVBUF, &size, &len);
+#endif
     if (status < 0) {
         return status;
     }
@@ -464,7 +493,7 @@ _hi_sendn(int sd, const void *vptr, size_t n)
     ssize_t nsend;
     const char *ptr;
 
-    ptr = vptr;
+    ptr = (const char*)vptr;
     nleft = n;
     while (nleft > 0) {
         nsend = send(sd, ptr, nleft, 0);
@@ -495,7 +524,7 @@ _hi_recvn(int sd, void *vptr, size_t n)
     ssize_t nrecv;
     char *ptr;
 
-    ptr = vptr;
+    ptr = (char *)vptr;
     nleft = n;
     while (nleft > 0) {
         nrecv = recv(sd, ptr, nleft, 0);
@@ -523,7 +552,6 @@ int64_t
 hi_usec_now(void)
 {
     int64_t usec;
-    int status;
 
 #ifdef _WIN32
     FILETIME ft;

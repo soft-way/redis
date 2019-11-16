@@ -32,6 +32,10 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef _WIN32
+#include "../../src/Win32_Interop/win32_types.h"
+#endif
+
 #include "fmacros.h"
 #include <sys/types.h>
 #ifndef _WIN32
@@ -308,7 +312,7 @@ static int _redisContextConnectTcp(redisContext *c, const char *addr, int port,
     if (timeout) {
         if (c->timeout != timeout) {
             if (c->timeout == NULL)
-                c->timeout = malloc(sizeof(struct timeval));
+                c->timeout = (timeval *)malloc(sizeof(struct timeval));
 
             memcpy(c->timeout, timeout, sizeof(struct timeval));
         }

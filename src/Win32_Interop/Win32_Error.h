@@ -24,6 +24,7 @@
 #define WIN32_INTEROP_ERROR_H
 
 #include <stdint.h>
+#include <system_error>
 
 #ifdef __cplusplus
 extern "C"

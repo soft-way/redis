@@ -60,11 +60,11 @@ extern "C"
 {
 #endif
 
+double wstrtod(const char* nptr, char** eptr);
+
 /* strtod does not handle Inf and Nan, we need to do the check before calling strtod */
 #undef strtod
 #define strtod(nptr, eptr) wstrtod((nptr), (eptr))
-
-double wstrtod(const char *nptr, char **eptr);
 
 #ifdef __cplusplus
 }
