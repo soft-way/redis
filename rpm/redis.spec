@@ -4,8 +4,8 @@ Version:		5.0.4
 Release:		1%{?dist}
 License:		CPL
 Group:			DX
-URL:			  https://redis.io/
-Source:			http://download.redis.io/releases/redis-5.0.4.tar.gz
+URL:			https://redis.io/
+Source:			https://github.com/soft-way/redis/archive/5.0.4.tar.gz
 
 %description
 Redis is redis cluster package
