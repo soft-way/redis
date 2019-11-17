@@ -20,4 +20,4 @@ How to build jemalloc for Windows
    sh -c "CC=cl ./autogen.sh"
 
 6. Now the project can be opened and built in Visual Studio:
-   msvc\jemalloc_vc2017.sln
+   msvc\jemalloc_vc2019.sln
