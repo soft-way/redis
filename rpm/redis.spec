@@ -1,11 +1,11 @@
 Name:			  redis
 Summary:		Redis cluster server
-Version:		5.1.0
+Version:		5.0.4
 Release:		1%{?dist}
 License:		CPL
 Group:			DX
 URL:			  https://redis.io/
-Source:			http://download.redis.io/releases/redis-5.1.0.tar.gz
+Source:			http://download.redis.io/releases/redis-5.0.4.tar.gz
 
 %description
 Redis is redis cluster package
