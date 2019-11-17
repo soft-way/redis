@@ -312,7 +312,7 @@ static int _redisContextConnectTcp(redisContext *c, const char *addr, int port,
     if (timeout) {
         if (c->timeout != timeout) {
             if (c->timeout == NULL)
-                c->timeout = (timeval *)malloc(sizeof(struct timeval));
+                c->timeout = (struct timeval *)malloc(sizeof(struct timeval));
 
             memcpy(c->timeout, timeout, sizeof(struct timeval));
         }

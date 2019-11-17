@@ -1,4 +1,5 @@
 deps/jemalloc/Makefile
+deps/jemalloc/VERSION
 deps/jemalloc/bin/jemalloc-config
 deps/jemalloc/bin/jemalloc.sh
 deps/jemalloc/bin/jeprof
