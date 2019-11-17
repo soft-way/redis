@@ -36,6 +36,8 @@
 #include "Win32_Interop/win32fixes.h"
 #include "Win32_Interop/Win32_QFork.h"
 #include "Win32_Interop/Win32_PThread.h"
+#else
+#define INVALID_HANDLE_VALUE -1
 #endif
 
 #include "fmacros.h"
@@ -1431,6 +1433,8 @@ extern dictType modulesDictType;
 extern "C"
 {
 #endif
+
+int main(int argc, char** argv);
 
 /*-----------------------------------------------------------------------------
  * Functions prototypes

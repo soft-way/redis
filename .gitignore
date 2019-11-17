@@ -147,6 +147,7 @@ src/configs
 redis.ds
 src/redis.conf
 src/nodes.conf
+src/release.h
 deps/lua/src/lua
 deps/lua/src/luac
 deps/lua/src/liblua.a
@@ -159,6 +160,7 @@ msvs/.vs
 msvs/RedisServer/x64
 msvs/RedisBenchmark/x64
 msvs/RedisCli/x64
+msvs/RedisClusterCli/x64
 msvs/hiredis/x64
 msvs/lua/lua/x64
 msvs/x64

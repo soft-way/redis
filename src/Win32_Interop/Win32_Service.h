@@ -27,10 +27,11 @@ extern "C"
 {
 #endif
 
-	BOOL RunningAsService();
-    const char* GetServiceName();
-    BOOL HandleServiceCommands(int argc, char **argv);
-	BOOL ServiceStopIssued();
+BOOL RunningAsService();
+const char* GetServiceName();
+BOOL HandleServiceCommands(int argc, char **argv);
+BOOL ServiceStopIssued();
+int main(int argc, char** argv);
 
 #ifdef __cplusplus
 }

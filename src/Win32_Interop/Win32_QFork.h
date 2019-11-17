@@ -94,13 +94,7 @@ BOOL AbortForkOperation();
 #endif
 BOOL FreeHeapBlock(LPVOID addr, size_t size);
 
-#ifndef NO_QFORKIMPL
-#ifdef QFORK_MAIN_IMPL
 int redis_main(int argc, char** argv);
-#else
-#define main redis_main
-#endif
-#endif
 
 #ifdef __cplusplus
 }

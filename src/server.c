@@ -4123,8 +4123,11 @@ int redisIsSupervised(int mode) {
     return 0;
 }
 
-
-int main(int argc, char **argv) {
+#ifdef _WIN32
+int redis_main(int argc, char** argv) {
+#else
+int main(int argc, char** argv) {
+#endif
     struct timeval tv;
     int j;
 

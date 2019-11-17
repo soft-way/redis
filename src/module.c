@@ -777,7 +777,7 @@ void autoMemoryAdd(RedisModuleCtx *ctx, int type, void *ptr) {
     if (ctx->amqueue_used == ctx->amqueue_len) {
         ctx->amqueue_len *= 2;
         if (ctx->amqueue_len < 16) ctx->amqueue_len = 16;
-        ctx->amqueue = (AutoMemEntry*)zrealloc(ctx->amqueue,sizeof(struct AutoMemEntry)*ctx->amqueue_len);
+        ctx->amqueue = (struct AutoMemEntry*)zrealloc(ctx->amqueue,sizeof(struct AutoMemEntry)*ctx->amqueue_len);
     }
     ctx->amqueue[ctx->amqueue_used].type = type;
     ctx->amqueue[ctx->amqueue_used].ptr = ptr;

@@ -261,8 +261,18 @@ static struct pref {
 static volatile sig_atomic_t force_cancel_loop = 0;
 static void usage(void);
 static void slaveMode(void);
-char *redisGitSHA1(void);
-char *redisGitDirty(void);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+char *redisGitSHA1();
+char *redisGitDirty();
+
+#ifdef __cplusplus
+}
+#endif
+
 static int cliConnect(int force);
 
 static char *getInfoField(char *info, char *field);
@@ -459,12 +469,20 @@ void dictListDestructor(void *privdata, void *val)
     listRelease((list*)val);
 }
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* _serverAssert is needed by dict */
 void _serverAssert(const char *estr, const char *file, int line) {
     fprintf(stderr, "=== ASSERTION FAILED ===");
     fprintf(stderr, "==> %s:%d '%s' is not true",file,line,estr);
     *((char*)-1) = 'x';
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 /*------------------------------------------------------------------------------
  * Help functions
@@ -6451,7 +6469,7 @@ static void findBigKeys(int memkeys, unsigned memkeys_samples) {
         /* Reallocate our type and size array if we need to */
         if(keys->elements > arrsize) {
             types = (typeinfo**)zrealloc(types, sizeof(typeinfo*)*keys->elements);
-            sizes = (unsigned __int64*)zrealloc(sizes, sizeof(unsigned long long)*keys->elements);
+            sizes = (unsigned long long *)zrealloc(sizes, sizeof(unsigned long long)*keys->elements);
 
             if(!types || !sizes) {
                 fprintf(stderr, "Failed to allocate storage for keys!\n");
@@ -6607,7 +6625,7 @@ static void findHotKeys(void) {
 
         /* Reallocate our freqs array if we need to */
         if(keys->elements > arrsize) {
-            freqs = (unsigned __int64*)zrealloc(freqs, sizeof(unsigned long long)*keys->elements);
+            freqs = (unsigned long long *)zrealloc(freqs, sizeof(unsigned long long)*keys->elements);
 
             if(!freqs) {
                 fprintf(stderr, "Failed to allocate storage for keys!\n");

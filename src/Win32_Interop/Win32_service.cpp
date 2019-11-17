@@ -69,6 +69,8 @@ this should preceed the other arguments passed to redis. For instance:
 #include <iostream>
 #include "Win32_RedisLog.h"
 #include "Win32_CommandLine.h"
+#include "Win32_service.h"
+
 using namespace std;
 
 #include "Win32_SmartHandle.h"
@@ -88,8 +90,6 @@ const ULONGLONG cThirtySeconds = 30 * 1000;
 BOOL g_isRunningAsService = FALSE;
 const int cPreshutdownInterval = 180000;
 const char* cServiceInstallPipeName = "\\\\.\\pipe\\redis-service-install";
-
-extern "C" int main(int argc, char** argv);
 
 typedef class ServicePipeWriter {
 public:

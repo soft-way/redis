@@ -874,13 +874,13 @@ updated:
     }
 
     /* Invalidate the cached cardinality. */
-    hdr = (hllhdr*)o->ptr;
+    hdr = (struct hllhdr*)o->ptr;
     HLL_INVALIDATE_CACHE(hdr);
     return 1;
 
 promote: /* Promote to dense representation. */
     if (hllSparseToDense(o) == C_ERR) return -1; /* Corrupted HLL. */
-    hdr = (hllhdr*)o->ptr;
+    hdr = (struct hllhdr*)o->ptr;
 
     /* We need to call hllDenseAdd() to perform the operation after the
      * conversion. However the result must be 1, since if we need to
@@ -1049,7 +1049,7 @@ uint64_t hllCount(struct hllhdr *hdr, int *invalid) {
 
 /* Call hllDenseAdd() or hllSparseAdd() according to the HLL encoding. */
 int hllAdd(robj *o, unsigned char *ele, size_t elesize) {
-    struct hllhdr *hdr = (hllhdr*)o->ptr;
+    struct hllhdr *hdr = (struct hllhdr*)o->ptr;
     switch(hdr->encoding) {
     case HLL_DENSE: return hllDenseAdd(hdr->registers,ele,elesize);
     case HLL_SPARSE: return hllSparseAdd(o,ele,elesize);
@@ -1066,7 +1066,7 @@ int hllAdd(robj *o, unsigned char *ele, size_t elesize) {
  * If the HyperLogLog is sparse and is found to be invalid, C_ERR
  * is returned, otherwise the function always succeeds. */
 int hllMerge(uint8_t *max, robj *hll) {
-    struct hllhdr *hdr = (hllhdr*)hll->ptr;
+    struct hllhdr *hdr = (struct hllhdr*)hll->ptr;
     int i;
 
     if (hdr->encoding == HLL_DENSE) {
@@ -1137,7 +1137,7 @@ robj *createHLLObject(void) {
 
     /* Create the actual object. */
     o = createObject(OBJ_STRING,s);
-    hdr = (hllhdr*)o->ptr;
+    hdr = (struct hllhdr*)o->ptr;
     memcpy(hdr->magic,"HYLL",4);
     hdr->encoding = HLL_SPARSE;
     return o;
@@ -1155,7 +1155,7 @@ int isHLLObjectOrReply(client *c, robj *o) {
 
     if (!sdsEncodedObject(o)) goto invalid;
     if (stringObjectLen(o) < sizeof(*hdr)) goto invalid;
-    hdr = (hllhdr*)o->ptr;
+    hdr = (struct hllhdr*)o->ptr;
 
     /* Magic should be "HYLL". */
     if (hdr->magic[0] != 'H' || hdr->magic[1] != 'Y' ||
@@ -1207,7 +1207,7 @@ void pfaddCommand(client *c) {
             return;
         }
     }
-    hdr = (hllhdr*)o->ptr;
+    hdr = (struct hllhdr*)o->ptr;
     if (updated) {
         signalModifiedKey(c->db,c->argv[1]);
         notifyKeyspaceEvent(NOTIFY_STRING,"pfadd",c->argv[1],c->db->id);
@@ -1269,7 +1269,7 @@ void pfcountCommand(client *c) {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
 
         /* Check if the cached cardinality is valid. */
-        hdr = (hllhdr*)o->ptr;
+        hdr = (struct hllhdr*)o->ptr;
         if (HLL_VALID_CACHE(hdr)) {
             /* Just return the cached value. */
             card = (uint64_t)hdr->card[0];
@@ -1326,7 +1326,7 @@ void pfmergeCommand(client *c) {
 
         /* If at least one involved HLL is dense, use the dense representation
          * as target ASAP to save time and avoid the conversion step. */
-        hdr = (hllhdr*)o->ptr;
+        hdr = (struct hllhdr*)o->ptr;
         if (hdr->encoding == HLL_DENSE) use_dense = 1;
 
         /* Merge with this HLL with our 'max' HHL by setting max[i]
@@ -1363,13 +1363,13 @@ void pfmergeCommand(client *c) {
      * invalidate the cached value. */
     for (j = 0; j < HLL_REGISTERS; j++) {
         if (max[j] == 0) continue;
-        hdr = (hllhdr*)o->ptr;
+        hdr = (struct hllhdr*)o->ptr;
         switch(hdr->encoding) {
         case HLL_DENSE: hllDenseSet(hdr->registers,j,max[j]); break;
         case HLL_SPARSE: hllSparseSet(o,j,max[j]); break;
         }
     }
-    hdr = (hllhdr*)o->ptr; /* o->ptr may be different now, as a side effect of
+    hdr = (struct hllhdr*)o->ptr; /* o->ptr may be different now, as a side effect of
                      last hllSparseSet() call. */
     HLL_INVALIDATE_CACHE(hdr);
 
@@ -1445,7 +1445,7 @@ void pfselftestCommand(client *c) {
         /* Make sure that for small cardinalities we use sparse
          * encoding. */
         if (j == checkpoint && j < server.hll_sparse_max_bytes/2) {
-            hdr2 = (hllhdr*)o->ptr;
+            hdr2 = (struct hllhdr*)o->ptr;
             if (hdr2->encoding != HLL_SPARSE) {
                 addReplyError(c, "TESTFAILED sparse encoding not used");
                 goto cleanup;
@@ -1453,7 +1453,7 @@ void pfselftestCommand(client *c) {
         }
 
         /* Check that dense and sparse representations agree. */
-        if (j == checkpoint && hllCount((hllhdr*)hdr,NULL) != hllCount((hllhdr*)o->ptr,NULL)) {
+        if (j == checkpoint && hllCount((struct hllhdr*)hdr,NULL) != hllCount((struct hllhdr*)o->ptr,NULL)) {
                 addReplyError(c, "TESTFAILED dense/sparse disagree");
                 goto cleanup;
         }
@@ -1504,7 +1504,7 @@ void pfdebugCommand(client *c) {
     }
     if (isHLLObjectOrReply(c,o) != C_OK) return;
     o = dbUnshareStringValue(c->db,c->argv[2],o);
-    hdr = (hllhdr*)o->ptr;
+    hdr = (struct hllhdr*)o->ptr;
 
     /* PFDEBUG GETREG <key> */
     if (!strcasecmp(cmd,"getreg")) {
@@ -1518,7 +1518,7 @@ void pfdebugCommand(client *c) {
             server.dirty++; /* Force propagation on encoding change. */
         }
 
-        hdr = (hllhdr*)o->ptr;
+        hdr = (struct hllhdr*)o->ptr;
         addReplyMultiBulkLen(c,HLL_REGISTERS);
         for (j = 0; j < HLL_REGISTERS; j++) {
             uint8_t val;

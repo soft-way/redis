@@ -37,6 +37,11 @@
 #include "version.h"
 #include "crc64.h"
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 char *redisGitSHA1() {
     return REDIS_GIT_SHA1;
 }
@@ -50,3 +55,7 @@ unsigned long long redisBuildId() {
 
     return crc64(0,(unsigned char*)buildid,strlen(buildid));
 }
+
+#ifdef __cplusplus
+}
+#endif

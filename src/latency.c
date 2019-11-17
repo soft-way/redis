@@ -581,7 +581,7 @@ NULL
 
     if (!strcasecmp((const char*)c->argv[1]->ptr,"history") && c->argc == 3) {
         /* LATENCY HISTORY <event> */
-        ts = (latencyTimeSeries*)dictFetchValue(server.latency_events,c->argv[2]->ptr);
+        ts = (struct latencyTimeSeries*)dictFetchValue(server.latency_events,c->argv[2]->ptr);
         if (ts == NULL) {
             addReplyMultiBulkLen(c,0);
         } else {
@@ -595,7 +595,7 @@ NULL
 
         de = dictFind(server.latency_events,c->argv[2]->ptr);
         if (de == NULL) goto nodataerr;
-        ts = (latencyTimeSeries*)dictGetVal(de);
+        ts = (struct latencyTimeSeries*)dictGetVal(de);
         event = (char *)dictGetKey(de);
 
         graph = latencyCommandGenSparkeline(event,ts);
