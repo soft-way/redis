@@ -166,4 +166,5 @@ msvs/hiredis/x64
 msvs/lua/lua/x64
 msvs/x64
 src/Win32_Interop/x64
-msvs/jemalloc
+msvs/jemalloc/x64
+
