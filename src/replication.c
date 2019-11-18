@@ -35,16 +35,17 @@
 #include "Win32_Interop/Win32_RedisLog.h"
 #endif
 
+#include "server.h"
+#include "replication.h"
+
 #ifndef _WIN32
 #include <sys/time.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#endif
 #include <fcntl.h>
 #include <sys/stat.h>
-#endif
 
-#include "server.h"
-#include "replication.h"
 
 /* --------------------------- Utility functions ---------------------------- */
 
