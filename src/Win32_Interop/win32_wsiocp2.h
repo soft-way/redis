@@ -26,6 +26,10 @@
 #include <WinSock2.h>   // For SOCKADDR_STORAGE
 #include "WS2tcpip.h"   // For socklen_t
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* need callback on write complete. WSIOCP_Request is used to pass parameters */
 typedef struct WSIOCP_Request {
     void *client;
@@ -40,5 +44,9 @@ int WSIOCP_Listen(int rfd, int backlog);
 int WSIOCP_Accept(int rfd, struct sockaddr *sa, socklen_t *len);
 int WSIOCP_SocketConnect(int rfd, const SOCKADDR_STORAGE *ss);
 int WSIOCP_SocketConnectBind(int rfd, const SOCKADDR_STORAGE *ss, const char* source_addr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

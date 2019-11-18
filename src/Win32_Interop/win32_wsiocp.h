@@ -25,6 +25,10 @@
 
 #include "win32_wsiocp2.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* structs and functions for using IOCP with windows sockets */
 
 /* structure used for async write requests.
@@ -75,5 +79,9 @@ BOOL           WSIOCP_CloseSocketState(iocpSockState* pSocketState);
 
 void* CallocMemoryNoCOW(size_t size);
 void  FreeMemoryNoCOW(void * ptr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

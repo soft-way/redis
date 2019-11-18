@@ -27,6 +27,10 @@
 #include <Windows.h>
 #include <stdio.h>      // for rename
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // API replacement for non-fd stdio functions
 #define fseeko      _fseeki64
 #define ftello      _ftelli64
@@ -68,5 +72,9 @@ int replace_rename(const char *src, const char *dest);
 int truncate(const char *path, PORT_LONGLONG length);
 
 #define lseek lseek64
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
