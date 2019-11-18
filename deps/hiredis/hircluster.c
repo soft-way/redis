@@ -2186,7 +2186,7 @@ redisClusterContext *redisClusterConnectWithTimeout(
     
     if (cc->connect_timeout == NULL)
     {
-        cc->connect_timeout = (timeval*)malloc(sizeof(struct timeval));
+        cc->connect_timeout = (struct timeval*)malloc(sizeof(struct timeval));
     }
     
     memcpy(cc->connect_timeout, &tv, sizeof(struct timeval));
@@ -2385,7 +2385,7 @@ int redisClusterSetOptionConnectTimeout(redisClusterContext *cc, const struct ti
 
     if (cc->connect_timeout == NULL)
     {
-        cc->connect_timeout = (timeval*) malloc(sizeof(struct timeval));
+        cc->connect_timeout = (struct timeval*) malloc(sizeof(struct timeval));
     }
     
     memcpy(cc->connect_timeout, &tv, sizeof(struct timeval));
@@ -2403,7 +2403,7 @@ int redisClusterSetOptionTimeout(redisClusterContext *cc, const struct timeval t
 
     if (cc->timeout == NULL)
     {
-        cc->timeout = (timeval*) malloc(sizeof(struct timeval));
+        cc->timeout = (struct timeval*) malloc(sizeof(struct timeval));
         memcpy(cc->timeout, &tv, sizeof(struct timeval));
     }
     else if (cc->timeout->tv_sec != tv.tv_sec || cc->timeout->tv_usec != tv.tv_usec)
@@ -2711,7 +2711,7 @@ static int slot_get_by_command(redisClusterContext *cc, char *cmd, int len)
     }
     else if(key_count == 1)
     {
-        kp = (keypos*)hiarray_get(command->keys, 0);
+        kp = (struct keypos*)hiarray_get(command->keys, 0);
         slot_num = keyHashSlot(kp->start, kp->end - kp->start);
 
         goto done;
@@ -2719,7 +2719,7 @@ static int slot_get_by_command(redisClusterContext *cc, char *cmd, int len)
     
     for(i = 0; i < hiarray_n(command->keys); i ++)
     {
-        kp = (keypos*)hiarray_get(command->keys, i);
+        kp = (struct keypos*)hiarray_get(command->keys, i);
 
         slot_num = keyHashSlot(kp->start, kp->end - kp->start);
     }
@@ -3217,14 +3217,14 @@ static int command_pre_fragment(redisClusterContext *cc,
 
     key_count = hiarray_n(command->keys);
 
-    sub_commands = (cmd **)hi_zalloc(REDIS_CLUSTER_SLOTS * sizeof(*sub_commands));
+    sub_commands = (struct cmd **)hi_zalloc(REDIS_CLUSTER_SLOTS * sizeof(*sub_commands));
     if (sub_commands == NULL) 
     {
         __redisClusterSetError(cc,REDIS_ERR_OOM,"Out of memory");
         goto done;
     }
 
-    command->frag_seq = (cmd**)hi_alloc(key_count * sizeof(*command->frag_seq));
+    command->frag_seq = (struct cmd**)hi_alloc(key_count * sizeof(*command->frag_seq));
     if(command->frag_seq == NULL)
     {
         __redisClusterSetError(cc,REDIS_ERR_OOM,"Out of memory");
@@ -3234,7 +3234,7 @@ static int command_pre_fragment(redisClusterContext *cc,
     
     for(i = 0; i < key_count; i ++)
     {
-        kp = (keypos*)hiarray_get(command->keys, i);
+        kp = (struct keypos*)hiarray_get(command->keys, i);
 
         slot_num = keyHashSlot(kp->start, kp->end - kp->start);
 
@@ -3257,7 +3257,7 @@ static int command_pre_fragment(redisClusterContext *cc,
 
         sub_command->narg++;
 
-        sub_kp = (keypos*)hiarray_push(sub_command->keys);
+        sub_kp = (struct keypos*)hiarray_push(sub_command->keys);
         if (sub_kp == NULL) {
             __redisClusterSetError(cc,REDIS_ERR_OOM,"Out of memory");
             slot_num = -1;
@@ -3331,7 +3331,7 @@ static int command_pre_fragment(redisClusterContext *cc,
             
             for(j = 0; j < hiarray_n(sub_command->keys); j ++)
             {
-                kp = (keypos*)hiarray_get(sub_command->keys, j);
+                kp = (struct keypos*)hiarray_get(sub_command->keys, j);
                 key_len = (uint32_t)(kp->end - kp->start);
                 hi_itoa(num_str, key_len);
                 num_str_len = strlen(num_str);
@@ -3374,7 +3374,7 @@ static int command_pre_fragment(redisClusterContext *cc,
 
             for(j = 0; j < hiarray_n(sub_command->keys); j ++)
             {
-                kp = (keypos*)hiarray_get(sub_command->keys, j);
+                kp = (struct keypos*)hiarray_get(sub_command->keys, j);
                 key_len = (uint32_t)(kp->end - kp->start);
                 hi_itoa(num_str, key_len);
                 num_str_len = strlen(num_str);
@@ -3419,7 +3419,7 @@ static int command_pre_fragment(redisClusterContext *cc,
             
             for(j = 0; j < hiarray_n(sub_command->keys); j ++)
             {
-                kp = (keypos*)hiarray_get(sub_command->keys, j);
+                kp = (struct keypos*)hiarray_get(sub_command->keys, j);
                 key_len = (uint32_t)(kp->end - kp->start);
                 hi_itoa(num_str, key_len);
                 num_str_len = strlen(num_str);
@@ -3481,7 +3481,7 @@ static void *command_post_fragment(redisClusterContext *cc,
     list_iter = listGetIterator(commands, AL_START_HEAD);
     while((list_node = listNext(list_iter)) != NULL)
     {
-        sub_command = (cmd *)list_node->value;
+        sub_command = (struct cmd *)list_node->value;
         reply = sub_command->reply;
         if(reply == NULL)
         {
@@ -3634,7 +3634,7 @@ static int command_format_by_slot(redisClusterContext *cc,
     }
     else if(key_count == 1)
     {
-        kp = (keypos*)hiarray_get(command->keys, 0);
+        kp = (struct keypos*)hiarray_get(command->keys, 0);
         slot_num = keyHashSlot(kp->start, kp->end - kp->start);
         command->slot_num = slot_num;
 
@@ -4151,7 +4151,7 @@ int redisClusterGetReply(redisClusterContext *cc, void **reply) {
         return REDIS_OK;
     }
     
-    command = (cmd *)list_command->value;
+    command = (struct cmd *)list_command->value;
     if(command == NULL)
     {
         __redisClusterSetError(cc,REDIS_ERR_OTHER,
@@ -4179,7 +4179,7 @@ int redisClusterGetReply(redisClusterContext *cc, void **reply) {
     list_iter = listGetIterator(commands, AL_START_HEAD);
     while((list_sub_command = listNext(list_iter)) != NULL)
     {
-        sub_command = (cmd *)list_sub_command->value;
+        sub_command = (struct cmd *)list_sub_command->value;
         if(sub_command == NULL)
         {
             __redisClusterSetError(cc,REDIS_ERR_OTHER,

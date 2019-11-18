@@ -97,7 +97,7 @@
       <Optimization>Disabled</Optimization>
       <DisableSpecificWarnings>4996;4146</DisableSpecificWarnings>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <CompileAs>CompileAsCpp</CompileAs>
+      <CompileAs>Default</CompileAs>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -119,7 +119,7 @@
       <Optimization>Disabled</Optimization>
       <DisableSpecificWarnings>4996;4146</DisableSpecificWarnings>
       <WholeProgramOptimization>true</WholeProgramOptimization>
-      <CompileAs>CompileAsCpp</CompileAs>
+      <CompileAs>Default</CompileAs>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
     </ClCompile>
     <Link>
@@ -261,31 +261,9 @@
     <ClCompile Include="..\..\src\zmalloc.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\..\adlist.h" />
-    <ClInclude Include="..\src\..\anet.h" />
-    <ClInclude Include="..\src\..\bio.h" />
-    <ClInclude Include="..\src\..\config.h" />
-    <ClInclude Include="..\src\..\dict.h" />
-    <ClInclude Include="..\src\..\endianconv.h" />
-    <ClInclude Include="..\src\..\fmacros.h" />
-    <ClInclude Include="..\src\..\help.h" />
-    <ClInclude Include="..\src\..\intset.h" />
     <ClInclude Include="..\src\..\latency.h" />
-    <ClInclude Include="..\src\..\lzf.h" />
-    <ClInclude Include="..\src\..\lzfP.h" />
     <ClInclude Include="..\src\..\pqsort.h" />
     <ClInclude Include="..\src\..\rand.h" />
-    <ClInclude Include="..\src\..\redisassert.h" />
-    <ClInclude Include="..\src\..\rio.h" />
-    <ClInclude Include="..\src\..\sha1.h" />
-    <ClInclude Include="..\src\..\slowlog.h" />
-    <ClInclude Include="..\src\..\solarisfixes.h" />
-    <ClInclude Include="..\src\..\sparkline.h" />
-    <ClInclude Include="..\src\..\testhelp.h" />
-    <ClInclude Include="..\src\..\version.h" />
-    <ClInclude Include="..\src\..\ziplist.h" />
-    <ClInclude Include="..\src\..\zipmap.h" />
-    <ClInclude Include="..\src\..\zmalloc.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Win32_Interop\Win32_Interop.vcxproj">

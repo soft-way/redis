@@ -28,31 +28,23 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #ifdef _WIN32
-#include "Win32_Interop/win32_types.h"
 #include "Win32_Interop/Win32_Portability.h"
-#include "Win32_Interop/Win32_RedisLog.h"
+#include "Win32_Interop/win32_types.h"
 #include "Win32_Interop/Win32_Time.h"
-#include "Win32_Interop/Win32_Error.h"
+#include "Win32_Interop/Win32_RedisLog.h"
 #endif
-
-#include "server.h"
 
 #ifndef _WIN32
 #include <sys/time.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#else
-#endif
 #include <fcntl.h>
 #include <sys/stat.h>
+#endif
 
-void replicationDiscardCachedMaster(void);
-void replicationResurrectCachedMaster(int newfd);
-void replicationSendAck(void);
-void putSlaveOnline(client *slave);
-int cancelReplicationHandshake(void);
+#include "server.h"
+#include "replication.h"
 
 /* --------------------------- Utility functions ---------------------------- */
 

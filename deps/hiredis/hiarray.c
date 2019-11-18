@@ -10,7 +10,7 @@ hiarray_create(uint32_t n, size_t size)
 
     ASSERT(n != 0 && size != 0);
 
-    a = (hiarray * )hi_alloc(sizeof(*a));
+    a = (struct hiarray * )hi_alloc(sizeof(*a));
     if (a == NULL) {
         return NULL;
     }

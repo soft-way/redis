@@ -2211,6 +2211,7 @@ void xorDigest(unsigned char *digest, void *ptr, size_t len);
 #define redisDebugMark() \
     printf("-- MARK %s:%d --\n", __FILE__, __LINE__)
 
+int checkForSentinelMode(int argc, char** argv);
 
 #ifdef __cplusplus
 }
