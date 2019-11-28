@@ -1,3 +1,9 @@
+deps/jemalloc/CMakeCache.txt
+deps/jemalloc/CMakeFiles/
+deps/jemalloc/CMakeLists.txt
+deps/jemalloc/DartConfiguration.tcl
+deps/jemalloc/GetPageSize/
+deps/jemalloc/Utilities.cmake
 deps/jemalloc/Makefile
 deps/jemalloc/VERSION
 deps/jemalloc/bin/jemalloc-config

@@ -168,7 +168,7 @@ link.exe -dll -noentry resources/EventLog.res -out:$(TargetDir)EventLog.dll
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>JEMALLOC_NO_PRIVATE_NAMESPACE;USE_STATIC;USE_JEMALLOC;_OFF_T_DEFINED;WIN32;_DEBUG;_LIB;%(PreprocessorDefinitions);LACKS_STDLIB_H;_CRT_SECURE_NO_WARNINGS;PSAPI_VERSION=1</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\..\deps\hiredis;$(ProjectDir)..\..\deps\lua\src;$(ProjectDir)..\..\deps\jemalloc\include;$(ProjectDir)..\..\deps\jemalloc\include\msvc_compat</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\..\deps\hiredis;$(ProjectDir)..\..\deps\lua\src</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <CompileAs>Default</CompileAs>
     </ClCompile>
