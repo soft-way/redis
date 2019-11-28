@@ -155,6 +155,7 @@ redis.ds
 src/redis.conf
 src/nodes.conf
 src/release.h
+src/Win32_Interop/EventLog.h
 deps/lua/src/lua
 deps/lua/src/luac
 deps/lua/src/liblua.a
